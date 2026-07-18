@@ -1,0 +1,14 @@
+# MongoDB optionnel via Docker (si aucune instance locale n'est installée)
+# Lancer avec :  docker compose up -d
+services:
+  mongodb:
+    image: mongo:6
+    container_name: poulina-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

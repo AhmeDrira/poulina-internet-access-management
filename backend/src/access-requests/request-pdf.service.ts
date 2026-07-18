@@ -1,0 +1,329 @@
+import { Injectable } from '@nestjs/common';
+import PDFDocument from 'pdfkit';
+import {
+  AccessType,
+  DurationType,
+  REQUEST_TYPE_LABELS,
+  RequestStatus,
+} from '../common/enums';
+import { FORM_DEFINITIONS, formatFormValue } from './form-definitions';
+import { AccessRequestDocument } from './schemas/access-request.schema';
+
+const ACCESS_TYPE_LABELS: Record<AccessType, string> = {
+  [AccessType.FULL]: 'Accès complet',
+  [AccessType.STANDARD]: 'Accès standard (navigation professionnelle filtrée)',
+  [AccessType.RESTRICTED]: 'Accès restreint (liste blanche de sites)',
+};
+
+const STATUS_LABELS: Record<RequestStatus, string> = {
+  [RequestStatus.PENDING_MANAGER]: 'En attente de validation du chef de département',
+  [RequestStatus.CHANGES_REQUESTED]: 'Modifications demandées par le chef',
+  [RequestStatus.REJECTED]: 'Refusée par le chef de département',
+  [RequestStatus.APPROVED_BY_MANAGER]: 'Acceptée — en attente de l’équipe réseau',
+  [RequestStatus.PENDING_NETWORK]: 'En attente de l’équipe réseau',
+  [RequestStatus.IN_PROGRESS_NETWORK]: 'En cours de vérification technique',
+  [RequestStatus.ACTIVATED]: 'Exécutée / accès activé',
+  [RequestStatus.REJECTED_TECHNICAL]: 'Refus technique (équipe réseau)',
+  [RequestStatus.CLOSED]: 'Clôturée',
+  [RequestStatus.EXPIRED]: 'Expirée',
+};
+
+const INK = '#1e293b';
+const MUTED = '#64748b';
+const LINE = '#cbd5e1';
+const ACCENT = '#1d54a7';
+
+function formatDate(value?: Date | null): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('fr-FR');
+}
+
+function formatDateTime(value?: Date | null): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function personName(value: any): string {
+  if (!value) return '—';
+  if (value.firstName || value.lastName) {
+    return `${value.firstName ?? ''} ${value.lastName ?? ''}`.trim();
+  }
+  return '—';
+}
+
+/**
+ * Génère la version PDF officielle d'un formulaire rempli :
+ * l'équivalent numérique de l'ancien formulaire papier, avec
+ * les blocs de décision et les zones de signature.
+ */
+@Injectable()
+export class RequestPdfService {
+  async generate(request: AccessRequestDocument): Promise<Buffer> {
+    const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<Buffer>((resolve) =>
+      doc.on('end', () => resolve(Buffer.concat(chunks))),
+    );
+
+    this.drawHeader(doc, request);
+    this.drawRequesterSection(doc, request);
+    this.drawContentSection(doc, request);
+    this.drawManagerSection(doc, request);
+    this.drawNetworkSection(doc, request);
+    this.drawSignatures(doc);
+    this.drawFooter(doc, request);
+
+    doc.end();
+    return done;
+  }
+
+  // ------------------------------------------------------------------
+
+  private drawHeader(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(13)
+      .fillColor(INK)
+      .text('GROUPE HOLDING POULINA', { continued: false });
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor(MUTED)
+      .text('Direction des Systèmes d’Information — Sécurité des accès');
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(INK)
+      .text(`Réf. : ${request.reference}`, 380, 50, { width: 167, align: 'right' })
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor(MUTED)
+      .text(`Émis le : ${formatDate(request.createdAt)}`, 380, 64, {
+        width: 167,
+        align: 'right',
+      });
+
+    doc
+      .moveTo(48, 92)
+      .lineTo(547, 92)
+      .lineWidth(1.2)
+      .strokeColor(ACCENT)
+      .stroke();
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .fillColor(INK)
+      .text(REQUEST_TYPE_LABELS[request.requestType].toUpperCase(), 48, 106, {
+        width: 499,
+        align: 'center',
+      });
+    doc
+      .font('Helvetica')
+      .fontSize(9.5)
+      .fillColor(MUTED)
+      .text(`Statut actuel : ${STATUS_LABELS[request.status]}`, {
+        width: 499,
+        align: 'center',
+      });
+    doc.moveDown(1.2);
+  }
+
+  private sectionTitle(doc: PDFKit.PDFDocument, title: string): void {
+    if (doc.y > 720) doc.addPage();
+    doc.moveDown(0.6);
+    const y = doc.y;
+    doc.rect(48, y, 499, 18).fillColor('#eef2f7').fill();
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(ACCENT)
+      .text(title.toUpperCase(), 56, y + 4.5);
+    doc.moveDown(0.7);
+  }
+
+  /** Grille clé/valeur sur 2 colonnes */
+  private keyValues(doc: PDFKit.PDFDocument, pairs: [string, string][]): void {
+    const colWidth = 249;
+    for (let index = 0; index < pairs.length; index += 2) {
+      if (doc.y > 740) doc.addPage();
+      const y = doc.y;
+      for (const column of [0, 1]) {
+        const pair = pairs[index + column];
+        if (!pair) continue;
+        const x = 48 + column * (colWidth + 4);
+        doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(pair[0].toUpperCase(), x, y);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9.5)
+          .fillColor(INK)
+          .text(pair[1] || '—', x, y + 10, { width: colWidth });
+      }
+      const leftHeight = doc.heightOfString(pairs[index]?.[1] || '—', { width: colWidth });
+      const rightHeight = pairs[index + 1]
+        ? doc.heightOfString(pairs[index + 1][1] || '—', { width: colWidth })
+        : 0;
+      doc.y = y + 10 + Math.max(leftHeight, rightHeight, 12) + 6;
+      doc.x = 48;
+    }
+  }
+
+  private paragraph(doc: PDFKit.PDFDocument, label: string, text: string): void {
+    if (doc.y > 700) doc.addPage();
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(label.toUpperCase(), 48, doc.y);
+    doc.moveDown(0.2);
+    const y = doc.y;
+    const height = doc.heightOfString(text || '—', { width: 483 }) + 12;
+    doc.rect(48, y, 499, height).lineWidth(0.7).strokeColor(LINE).stroke();
+    doc
+      .font('Helvetica')
+      .fontSize(9.5)
+      .fillColor(INK)
+      .text(text || '—', 56, y + 6, { width: 483 });
+    doc.y = y + height + 6;
+    doc.x = 48;
+  }
+
+  // ------------------------------------------------------------------
+
+  private drawRequesterSection(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    this.sectionTitle(doc, '1. Informations du demandeur');
+    const department: any = request.department;
+    const service: any = request.service;
+    this.keyValues(doc, [
+      ['Nom et prénom', `${request.firstName} ${request.lastName}`],
+      ['Matricule', request.matricule],
+      ['Email professionnel', request.email],
+      ['Poste', request.position || '—'],
+      ['Département', department?.name ?? '—'],
+      ['Service', service?.name ?? '—'],
+    ]);
+  }
+
+  private drawContentSection(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    this.sectionTitle(doc, '2. Contenu de la demande');
+
+    const pairs: [string, string][] = [];
+    if (request.accessType) {
+      pairs.push(["Type d'accès Internet", ACCESS_TYPE_LABELS[request.accessType]]);
+    }
+    pairs.push([
+      'Durée demandée',
+      request.durationType === DurationType.PERMANENT
+        ? 'Permanente'
+        : `Temporaire — ${request.durationDays ?? '—'} jour(s)`,
+    ]);
+
+    const definitions = FORM_DEFINITIONS[request.requestType];
+    const formData = (request.formData ?? {}) as Record<string, unknown>;
+    for (const field of definitions) {
+      if (field.kind === 'commitment') continue; // rendu séparément ci-dessous
+      if (formData[field.key] === undefined) continue;
+      pairs.push([field.label, formatFormValue(request.requestType, field.key, formData[field.key])]);
+    }
+    this.keyValues(doc, pairs);
+
+    // Engagements (cases cochées)
+    for (const field of definitions) {
+      if (field.kind !== 'commitment') continue;
+      const accepted = formData[field.key] === true;
+      if (doc.y > 720) doc.addPage();
+      const y = doc.y;
+      doc.rect(48, y, 10, 10).lineWidth(0.9).strokeColor(INK).stroke();
+      if (accepted) {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text('X', 50.5, y + 1);
+      }
+      doc
+        .font('Helvetica')
+        .fontSize(8.5)
+        .fillColor(INK)
+        .text(field.label, 64, y, { width: 483 });
+      doc.moveDown(0.5);
+      doc.x = 48;
+    }
+
+    this.paragraph(doc, 'Justification du besoin', request.justification);
+  }
+
+  private drawManagerSection(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    this.sectionTitle(doc, '3. Décision du chef de département / direction');
+    let decision = 'En attente';
+    if (request.status === RequestStatus.REJECTED) decision = 'REFUSÉE';
+    else if (request.status === RequestStatus.CHANGES_REQUESTED)
+      decision = 'MODIFICATIONS DEMANDÉES';
+    else if (request.managerDecisionAt) decision = 'ACCEPTÉE';
+
+    this.keyValues(doc, [
+      ['Décision', decision],
+      ['Date', formatDateTime(request.managerDecisionAt)],
+      ['Validée par', personName(request.managerDecisionBy)],
+      [
+        request.status === RequestStatus.REJECTED ? 'Motif du refus' : 'Commentaire',
+        request.status === RequestStatus.REJECTED
+          ? request.rejectionReason || '—'
+          : request.managerComment || '—',
+      ],
+    ]);
+  }
+
+  private drawNetworkSection(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    this.sectionTitle(doc, '4. Vérification et traitement — équipe réseau et sécurité');
+    let result = 'En attente';
+    if (request.status === RequestStatus.REJECTED_TECHNICAL) result = 'REFUS TECHNIQUE';
+    else if (request.accessActivated === true) result = 'EXÉCUTÉE / ACCÈS ACTIVÉ';
+
+    this.keyValues(doc, [
+      ['Résultat', result],
+      ['Traité par', personName(request.processedBy)],
+      ['Date de traitement', formatDateTime(request.processedAt)],
+      ['Commentaire technique', request.networkComment || '—'],
+      ["Date d'activation", formatDate(request.activationDate)],
+      [
+        "Date d'expiration",
+        request.expirationDate ? formatDate(request.expirationDate) : 'Permanente / N.A.',
+      ],
+    ]);
+  }
+
+  private drawSignatures(doc: PDFKit.PDFDocument): void {
+    if (doc.y > 640) doc.addPage();
+    doc.moveDown(1);
+    const y = doc.y;
+    const labels = ['Le demandeur', 'Le chef de département', 'L’équipe réseau / sécurité'];
+    labels.forEach((label, index) => {
+      const x = 48 + index * 170;
+      doc.rect(x, y, 158, 64).lineWidth(0.7).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(label, x + 8, y + 6);
+      doc
+        .fontSize(7.5)
+        .text('Signature :', x + 8, y + 48);
+    });
+    doc.y = y + 76;
+    doc.x = 48;
+  }
+
+  private drawFooter(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+    const range = doc.bufferedPageRange();
+    for (let index = range.start; index < range.start + range.count; index++) {
+      doc.switchToPage(index);
+      doc
+        .font('Helvetica')
+        .fontSize(7.5)
+        .fillColor(MUTED)
+        .text(
+          `Document généré électroniquement le ${formatDateTime(new Date())} — ${request.reference} — page ${index + 1}/${range.count}`,
+          48,
+          800,
+          { width: 499, align: 'center' },
+        );
+    }
+  }
+}
