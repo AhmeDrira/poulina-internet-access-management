@@ -41,6 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       matricule: user.matricule,
       departmentId: department?._id ? department._id.toString() : null,
       serviceId: service?._id ? service._id.toString() : null,
+      mustChangePassword: user.mustChangePassword === true,
     };
   }
 }

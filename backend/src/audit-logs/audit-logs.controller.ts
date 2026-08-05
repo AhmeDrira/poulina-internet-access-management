@@ -1,13 +1,13 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../common/enums';
+import { GLOBAL_READ_ROLES } from '../common/enums';
 import { AuditLogsService } from './audit-logs.service';
 import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 
 @ApiTags("Journal d'audit")
 @ApiBearerAuth('JWT-auth')
-@Roles(Role.ADMIN, Role.SECURITY_OFFICER)
+@Roles(...GLOBAL_READ_ROLES)
 @Controller('audit-logs')
 export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}

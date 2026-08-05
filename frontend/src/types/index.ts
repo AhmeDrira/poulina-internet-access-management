@@ -6,7 +6,24 @@ export enum Role {
   NETWORK_TEAM = 'NETWORK_TEAM',
   ADMIN = 'ADMIN',
   SECURITY_OFFICER = 'SECURITY_OFFICER',
+  /** Supervise l'application : administrateurs, formulaires et référentiels */
+  SUPER_ADMIN = 'SUPER_ADMIN',
 }
+
+/** Rôles d'administration (référentiels et comptes) */
+export const ADMIN_ROLES: Role[] = [Role.ADMIN, Role.SUPER_ADMIN];
+
+/** Rôles disposant d'une vue globale en lecture */
+export const GLOBAL_READ_ROLES: Role[] = [Role.ADMIN, Role.SUPER_ADMIN, Role.SECURITY_OFFICER];
+
+/** Rôles dont la gestion est réservée au super administrateur */
+export const PRIVILEGED_ROLES: Role[] = [Role.ADMIN, Role.SUPER_ADMIN];
+
+/** Seuls rôles autorisés à utiliser la messagerie interne de traitement */
+export const MESSAGING_ROLES: Role[] = [Role.MANAGER, Role.NETWORK_TEAM];
+
+/** Rôles pouvant déposer une demande pour eux-mêmes */
+export const REQUESTER_ROLES: Role[] = [Role.EMPLOYEE, Role.MANAGER, Role.NETWORK_TEAM];
 
 export enum RequestStatus {
   PENDING_MANAGER = 'PENDING_MANAGER',
@@ -60,6 +77,23 @@ export enum NotificationType {
   REQUEST_CLOSED = 'REQUEST_CLOSED',
   REQUEST_EXPIRED = 'REQUEST_EXPIRED',
   REQUEST_EXPIRING_SOON = 'REQUEST_EXPIRING_SOON',
+  MESSAGE_RECEIVED = 'MESSAGE_RECEIVED',
+}
+
+/** Nature d'un champ de formulaire (formulaires gérés par le super administrateur) */
+export enum FormFieldKind {
+  TEXT = 'text',
+  TEXTAREA = 'textarea',
+  NUMBER = 'number',
+  DATE = 'date',
+  SELECT = 'select',
+  COMMITMENT = 'commitment',
+}
+
+/** État d'un fil de discussion interne */
+export enum ThreadStatus {
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED',
 }
 
 // ---------- Références peuplées ----------
@@ -98,8 +132,24 @@ export interface User {
   position: string;
   isActive: boolean;
   lastLoginAt: string | null;
+  /** Date à laquelle l'employé a défini son mot de passe (null = compte non activé) */
+  activatedAt: string | null;
+  /** Date d'envoi du dernier lien d'accès temporaire */
+  activationSentAt: string | null;
+  /** Échéance du lien d'accès en cours */
+  activationExpiresAt: string | null;
+  /** true = l'application est bloquée jusqu'au changement de mot de passe */
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** État lisible d'un compte, dérivé de isActive / activatedAt */
+export type AccountState = 'ACTIVE' | 'PENDING_ACTIVATION' | 'DISABLED';
+
+export function accountState(user: User): AccountState {
+  if (!user.isActive) return 'DISABLED';
+  return user.activatedAt ? 'ACTIVE' : 'PENDING_ACTIVATION';
 }
 
 export interface Department {
@@ -192,6 +242,125 @@ export interface AuditLog {
   userAgent: string;
   details: Record<string, unknown>;
   createdAt: string;
+}
+
+// ---------- Formulaires (définis en base, gérés par le super administrateur) ----------
+
+export interface FormFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface FormFieldDefinition {
+  key: string;
+  label: string;
+  kind: FormFieldKind;
+  required: boolean;
+  maxLength: number | null;
+  min: number | null;
+  max: number | null;
+  placeholder: string;
+  helpText: string;
+  options: FormFieldOption[];
+}
+
+export interface FormDefinition {
+  _id: string;
+  requestType: RequestType;
+  title: string;
+  shortLabel: string;
+  description: string;
+  instructions: string;
+  isActive: boolean;
+  requiresAccessType: boolean;
+  requiresDuration: boolean;
+  requiresJustification: boolean;
+  defaultJustification: string;
+  fields: FormFieldDefinition[];
+  updatedBy: UserRef | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FormUsage {
+  requestType: RequestType;
+  totalRequests: number;
+  byField: Record<string, number>;
+}
+
+// ---------- Messagerie interne (chef de département ↔ équipe réseau) ----------
+
+export interface RequestThread {
+  _id: string;
+  request: string;
+  reference: string;
+  requestType: RequestType;
+  department: DepartmentRef;
+  requesterName: string;
+  status: ThreadStatus;
+  lastMessageAt: string | null;
+  lastMessagePreview: string;
+  lastMessageBy: UserRef | null;
+  messageCount: number;
+  resolvedBy: UserRef | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestMessage {
+  _id: string;
+  thread: string;
+  request: string;
+  author: UserRef;
+  authorRole: Role;
+  body: string;
+  readBy: string[];
+  createdAt: string;
+}
+
+export interface ThreadView {
+  thread: RequestThread | null;
+  messages: RequestMessage[];
+  request: {
+    _id: string;
+    reference: string;
+    requestType: RequestType;
+    status: RequestStatus;
+    requesterName: string;
+    departmentName: string;
+  };
+  /** Rôle du correspondant attendu en face */
+  counterpart: 'MANAGER' | 'NETWORK_TEAM';
+}
+
+// ---------- Comptes ----------
+
+/** Lien d'accès temporaire renvoyé à la personne habilitée (affiché une seule fois) */
+export interface ActivationLink {
+  url: string;
+  expiresAt: string;
+  isReset: boolean;
+}
+
+export interface CreatedUser {
+  user: User;
+  activation: ActivationLink;
+}
+
+/** Identité affichée sur la page publique d'activation */
+export interface ActivationTarget {
+  firstName: string;
+  lastName: string;
+  email: string;
+  expiresAt: string | null;
+  isReset: boolean;
+}
+
+export interface UsersSummary {
+  byRole: Record<Role, number>;
+  pendingActivation: User[];
 }
 
 // ---------- API ----------

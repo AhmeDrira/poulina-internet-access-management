@@ -1,10 +1,13 @@
 import {
   AccessType,
+  AccountState,
   DurationType,
+  FormFieldKind,
   RecommendationLevel,
   RequestStatus,
   RequestType,
   Role,
+  ThreadStatus,
 } from '../types';
 
 export type BadgeColor =
@@ -97,6 +100,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.NETWORK_TEAM]: 'Équipe réseau',
   [Role.ADMIN]: 'Administrateur',
   [Role.SECURITY_OFFICER]: 'Responsable sécurité',
+  [Role.SUPER_ADMIN]: 'Super administrateur',
 };
 
 export const ROLE_COLORS: Record<Role, BadgeColor> = {
@@ -105,6 +109,21 @@ export const ROLE_COLORS: Record<Role, BadgeColor> = {
   [Role.NETWORK_TEAM]: 'purple',
   [Role.ADMIN]: 'red',
   [Role.SECURITY_OFFICER]: 'orange',
+  [Role.SUPER_ADMIN]: 'amber',
+};
+
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  [Role.EMPLOYEE]: 'Dépose ses demandes et suit leur traitement.',
+  [Role.MANAGER]:
+    'Valide les demandes de son département et échange avec l’équipe réseau.',
+  [Role.NETWORK_TEAM]:
+    'Réalise la vérification technique et l’exécution des accès validés.',
+  [Role.ADMIN]:
+    'Gère les utilisateurs et les référentiels, consulte les statistiques et l’audit.',
+  [Role.SECURITY_OFFICER]:
+    'Consulte l’ensemble des demandes, les statistiques et le journal d’audit.',
+  [Role.SUPER_ADMIN]:
+    'Supervise l’application : administrateurs, formulaires, référentiels et audit.',
 };
 
 // ---------- Types d'accès ----------
@@ -157,6 +176,18 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   REQUEST_CLOSED: 'Demande clôturée',
   REQUEST_EXPIRED: 'Accès expiré',
   REQUEST_PDF_EXPORTED: 'Formulaire exporté en PDF',
+  USER_INVITED: 'Compte créé (lien d’activation envoyé)',
+  USER_INVITATION_RESENT: 'Lien d’activation régénéré',
+  ACCOUNT_ACTIVATED: 'Compte activé par l’employé',
+  ACTIVATION_FAILED: 'Lien d’activation invalide ou expiré',
+  PASSWORD_RESET_ENFORCED: 'Réinitialisation du mot de passe imposée',
+  FORM_UPDATED: 'Formulaire modifié',
+  FORM_ACTIVATED: 'Formulaire remis à disposition',
+  FORM_DEACTIVATED: 'Formulaire retiré du catalogue',
+  FORM_RESET: 'Formulaire réinitialisé',
+  MESSAGE_SENT: 'Message interne envoyé',
+  THREAD_RESOLVED: 'Échange marqué comme traité',
+  THREAD_REOPENED: 'Échange rouvert',
   USER_CREATED: 'Utilisateur créé',
   USER_UPDATED: 'Utilisateur modifié',
   USER_ACTIVATED: 'Utilisateur activé',
@@ -197,6 +228,44 @@ export const REQUEST_TYPE_OPTIONS = Object.values(RequestType).map((value) => ({
   value,
   label: REQUEST_TYPE_LABELS[value],
 }));
+
+// ---------- Formulaires et messagerie ----------
+
+export const FORM_FIELD_KIND_LABELS: Record<FormFieldKind, string> = {
+  [FormFieldKind.TEXT]: 'Texte court',
+  [FormFieldKind.TEXTAREA]: 'Texte long',
+  [FormFieldKind.NUMBER]: 'Nombre',
+  [FormFieldKind.DATE]: 'Date',
+  [FormFieldKind.SELECT]: 'Liste de choix',
+  [FormFieldKind.COMMITMENT]: 'Engagement à cocher',
+};
+
+export const FORM_FIELD_KIND_OPTIONS = Object.values(FormFieldKind).map((value) => ({
+  value,
+  label: FORM_FIELD_KIND_LABELS[value],
+}));
+
+export const THREAD_STATUS_LABELS: Record<ThreadStatus, string> = {
+  [ThreadStatus.OPEN]: 'En cours',
+  [ThreadStatus.RESOLVED]: 'Traité',
+};
+
+export const THREAD_STATUS_COLORS: Record<ThreadStatus, BadgeColor> = {
+  [ThreadStatus.OPEN]: 'amber',
+  [ThreadStatus.RESOLVED]: 'green',
+};
+
+export const ACCOUNT_STATE_LABELS: Record<AccountState, string> = {
+  ACTIVE: 'Actif',
+  PENDING_ACTIVATION: 'En attente d’activation',
+  DISABLED: 'Désactivé',
+};
+
+export const ACCOUNT_STATE_COLORS: Record<AccountState, BadgeColor> = {
+  ACTIVE: 'green',
+  PENDING_ACTIVATION: 'amber',
+  DISABLED: 'slate',
+};
 
 export function fullName(user?: { firstName: string; lastName: string } | null): string {
   if (!user) return '—';

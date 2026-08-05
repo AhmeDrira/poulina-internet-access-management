@@ -9,11 +9,12 @@ import { Model, Types } from 'mongoose';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
   AccessType,
+  ADMIN_ROLES,
   AuditAction,
   DurationType,
+  GLOBAL_READ_ROLES,
   NETWORK_QUEUE_STATUSES,
   NotificationType,
-  REQUEST_TYPE_LABELS,
   REQUEST_TYPE_PREFIXES,
   RequestStatus,
   RequestType,
@@ -27,6 +28,7 @@ import {
 import { escapeRegex } from '../common/utils/regex.util';
 import { DecisionHelperService } from '../decision-helper/decision-helper.service';
 import { Department, DepartmentDocument } from '../departments/schemas/department.schema';
+import { FormDefinitionsService } from '../form-definitions/form-definitions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Service, ServiceDocument } from '../services/schemas/service.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -38,7 +40,6 @@ import { RejectRequestDto } from './dto/reject-request.dto';
 import { RequestChangesDto } from './dto/request-changes.dto';
 import { RequestQueryDto } from './dto/request-query.dto';
 import { UpdateAccessRequestDto } from './dto/update-access-request.dto';
-import { validateFormData } from './form-definitions';
 import { AccessRequest, AccessRequestDocument } from './schemas/access-request.schema';
 import { RequestHistory, RequestHistoryDocument } from './schemas/request-history.schema';
 
@@ -49,10 +50,6 @@ const POPULATE = [
   { path: 'managerDecisionBy', select: 'firstName lastName' },
   { path: 'processedBy', select: 'firstName lastName' },
 ];
-
-/** Justification par défaut de la fiche d'engagement (formulaire sans motif libre) */
-const PASSWORD_COMMITMENT_JUSTIFICATION =
-  'Engagement de confidentialité relatif au mot de passe professionnel.';
 
 interface RequestContext {
   ipAddress?: string;
@@ -72,6 +69,7 @@ export class AccessRequestsService {
     private readonly notifications: NotificationsService,
     private readonly auditLogs: AuditLogsService,
     private readonly decisionHelper: DecisionHelperService,
+    private readonly formDefinitions: FormDefinitionsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -98,7 +96,10 @@ export class AccessRequestsService {
       throw new BadRequestException('Le département de votre profil est introuvable.');
     }
 
-    const content = this.validateRequestContent(dto.requestType, dto);
+    // Un formulaire retiré du catalogue par le super administrateur n'accepte plus de dépôt
+    await this.formDefinitions.assertUsable(dto.requestType);
+
+    const content = await this.validateRequestContent(dto.requestType, dto);
     const serviceId = await this.resolveService(dto.serviceId, requester, department);
 
     const previousRejectedCount = await this.requestModel.countDocuments({
@@ -156,7 +157,7 @@ export class AccessRequestsService {
     }
     const reference = created.reference;
 
-    const typeLabel = REQUEST_TYPE_LABELS[dto.requestType];
+    const typeLabel = await this.formDefinitions.titleOf(dto.requestType);
 
     await this.addHistory(created._id, {
       action: `Demande créée — ${typeLabel}`,
@@ -209,7 +210,7 @@ export class AccessRequestsService {
       );
     }
 
-    const content = this.validateRequestContent(request.requestType, {
+    const content = await this.validateRequestContent(request.requestType, {
       accessType: dto.accessType ?? request.accessType ?? undefined,
       durationType: dto.durationType ?? request.durationType,
       durationDays: dto.durationDays ?? request.durationDays ?? undefined,
@@ -318,6 +319,7 @@ export class AccessRequestsService {
 
     switch (authUser.role) {
       case Role.ADMIN:
+      case Role.SUPER_ADMIN:
       case Role.SECURITY_OFFICER:
         if (query.department) {
           filter.department = new Types.ObjectId(query.department);
@@ -418,7 +420,7 @@ export class AccessRequestsService {
       comment: dto.comment,
     });
 
-    const typeLabel = REQUEST_TYPE_LABELS[request.requestType];
+    const typeLabel = await this.formDefinitions.titleOf(request.requestType);
     await this.notifications.notify({
       recipientId: this.requesterId(request),
       type: NotificationType.REQUEST_APPROVED,
@@ -602,7 +604,7 @@ export class AccessRequestsService {
     this.assertNotOwnRequest(request, authUser);
 
     const fromStatus = request.status;
-    const typeLabel = REQUEST_TYPE_LABELS[request.requestType];
+    const typeLabel = await this.formDefinitions.titleOf(request.requestType);
     request.processedBy = new Types.ObjectId(authUser.userId);
     request.processedAt = new Date();
     request.networkComment = dto.networkComment?.trim() || '';
@@ -778,8 +780,7 @@ export class AccessRequestsService {
   /** Contrôle d'accès en lecture (réutilisé par l'export PDF) */
   assertCanView(request: AccessRequestDocument, authUser: AuthUser): void {
     const isOwner = this.requesterId(request).toString() === authUser.userId;
-    const isAdminOrSecurity =
-      authUser.role === Role.ADMIN || authUser.role === Role.SECURITY_OFFICER;
+    const isAdminOrSecurity = GLOBAL_READ_ROLES.includes(authUser.role);
     const isDepartmentManager =
       authUser.role === Role.MANAGER &&
       this.departmentId(request).toString() === authUser.departmentId;
@@ -799,7 +800,7 @@ export class AccessRequestsService {
    * Valide la cohérence du contenu selon le type de formulaire :
    * accessType, durée, justification et champs spécifiques (formData).
    */
-  private validateRequestContent(
+  private async validateRequestContent(
     requestType: RequestType,
     input: {
       accessType?: AccessType | null;
@@ -808,28 +809,31 @@ export class AccessRequestsService {
       justification?: string;
       formData?: Record<string, unknown>;
     },
-  ): {
+  ): Promise<{
     accessType: AccessType | null;
     durationType: DurationType;
     durationDays: number | null;
     justification: string;
     formData: Record<string, unknown>;
-  } {
-    // Type d'accès Internet : requis uniquement pour le formulaire Internet
+  }> {
+    // La définition du formulaire (éditable par le super administrateur)
+    // décide des blocs demandés : type d'accès, durée, justification, champs.
+    const definition = await this.formDefinitions.findByType(requestType);
+
     let accessType: AccessType | null = null;
-    if (requestType === RequestType.INTERNET_ACCESS) {
+    if (definition.requiresAccessType) {
       if (!input.accessType) {
         throw new BadRequestException(
-          "Le type d'accès (complet, standard, restreint) est obligatoire pour une demande d'accès Internet.",
+          "Le type d'accès (complet, standard, restreint) est obligatoire pour ce formulaire.",
         );
       }
       accessType = input.accessType;
     }
 
-    // Durée : la fiche d'engagement est toujours permanente
+    // Durée : un formulaire sans durée (ex : fiche d'engagement) est permanent
     let durationType = input.durationType;
     let durationDays = input.durationDays ?? null;
-    if (requestType === RequestType.PASSWORD_COMMITMENT) {
+    if (!definition.requiresDuration) {
       durationType = DurationType.PERMANENT;
       durationDays = null;
     } else if (durationType === DurationType.TEMPORARY && !durationDays) {
@@ -840,18 +844,21 @@ export class AccessRequestsService {
       durationDays = null;
     }
 
-    // Justification : obligatoire sauf pour la fiche d'engagement
+    // Justification : repli sur celle du formulaire quand elle n'est pas demandée
     let justification = (input.justification ?? '').trim();
     if (!justification) {
-      if (requestType === RequestType.PASSWORD_COMMITMENT) {
-        justification = PASSWORD_COMMITMENT_JUSTIFICATION;
+      if (!definition.requiresJustification) {
+        justification = definition.defaultJustification || definition.title;
       } else {
         throw new BadRequestException('La justification du besoin est obligatoire.');
       }
     }
 
-    // Champs spécifiques au formulaire
-    const { cleaned, errors } = validateFormData(requestType, input.formData);
+    // Champs spécifiques au formulaire (liste blanche issue de la définition)
+    const { cleaned, errors } = await this.formDefinitions.validateFormData(
+      requestType,
+      input.formData,
+    );
     if (errors.length > 0) {
       throw new BadRequestException(errors.map((error) => error.message));
     }
@@ -899,7 +906,9 @@ export class AccessRequestsService {
       });
       return;
     }
-    const admins = await this.userModel.find({ role: Role.ADMIN, isActive: true }).exec();
+    const admins = await this.userModel
+      .find({ role: { $in: ADMIN_ROLES }, isActive: true })
+      .exec();
     await this.notifications.notifyMany(
       admins.map((admin) => admin._id),
       {

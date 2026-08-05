@@ -8,6 +8,17 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { UsersService } from '../users/users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
+
+/** Informations minimales affichées sur la page d'activation (lien temporaire) */
+export interface ActivationTarget {
+  firstName: string;
+  lastName: string;
+  email: string;
+  expiresAt: Date | null;
+  /** true = redéfinition du mot de passe d'un compte déjà activé */
+  isReset: boolean;
+}
 
 @Injectable()
 export class AuthService {
@@ -21,7 +32,7 @@ export class AuthService {
     const email = dto.email.toLowerCase().trim();
     const user = await this.usersService.findByEmailWithPassword(email);
 
-    const fail = async (reason: string) => {
+    const fail = async (reason: string, message?: string) => {
       await this.auditLogs.record({
         userId: user ? user._id.toString() : null,
         userEmail: email,
@@ -31,7 +42,7 @@ export class AuthService {
         details: { raison: reason },
       });
       // Message identique quel que soit le cas : ne pas révéler si l'email existe
-      throw new UnauthorizedException('Email ou mot de passe incorrect.');
+      throw new UnauthorizedException(message ?? 'Email ou mot de passe incorrect.');
     };
 
     if (!user) {
@@ -39,6 +50,14 @@ export class AuthService {
     }
     if (!user.isActive) {
       return fail('Compte désactivé');
+    }
+    if (!user.password) {
+      // Compte créé par un administrateur, jamais activé : message explicite
+      // pour orienter l'employé vers son lien d'activation.
+      return fail(
+        'Compte non activé',
+        "Ce compte n'est pas encore activé. Utilisez le lien d'activation reçu, ou demandez-en un nouveau à votre administrateur.",
+      );
     }
     const passwordValid = await bcrypt.compare(dto.password, user.password);
     if (!passwordValid) {
@@ -80,6 +99,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Utilisateur introuvable.');
     }
+    if (!user.password) {
+      throw new UnauthorizedException(
+        "Ce compte n'a pas encore de mot de passe : utilisez votre lien d'activation.",
+      );
+    }
     const valid = await bcrypt.compare(dto.currentPassword, user.password);
     if (!valid) {
       throw new UnauthorizedException('Le mot de passe actuel est incorrect.');
@@ -93,5 +117,76 @@ export class AuthService {
       userAgent,
     });
     return { message: 'Mot de passe modifié avec succès.' };
+  }
+
+  // ------------------------------------------------------------------
+  // Activation d'un compte par lien temporaire (routes publiques)
+  // ------------------------------------------------------------------
+
+  /** Vérifie le lien et renvoie l'identité du compte concerné */
+  async describeActivation(
+    token: string,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<ActivationTarget> {
+    try {
+      const user = await this.usersService.findByActivationToken(token);
+      return {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        expiresAt: user.activationExpiresAt,
+        isReset: user.activatedAt !== null,
+      };
+    } catch (error) {
+      await this.auditLogs.record({
+        userId: null,
+        userEmail: 'lien-activation',
+        action: AuditAction.ACTIVATION_FAILED,
+        ipAddress,
+        userAgent,
+        details: { etape: 'ouverture du lien', raison: (error as Error).message },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Consomme le lien : le mot de passe choisi est enregistré, le lien devient
+   * inutilisable et le compte est pleinement opérationnel.
+   */
+  async activateAccount(
+    token: string,
+    dto: SetPasswordDto,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<{ message: string; email: string }> {
+    let user;
+    try {
+      user = await this.usersService.consumeActivationToken(token, dto.password);
+    } catch (error) {
+      await this.auditLogs.record({
+        userId: null,
+        userEmail: 'lien-activation',
+        action: AuditAction.ACTIVATION_FAILED,
+        ipAddress,
+        userAgent,
+        details: { etape: 'définition du mot de passe', raison: (error as Error).message },
+      });
+      throw error;
+    }
+
+    await this.auditLogs.record({
+      userId: user._id.toString(),
+      userEmail: user.email,
+      action: AuditAction.ACCOUNT_ACTIVATED,
+      ipAddress,
+      userAgent,
+    });
+
+    return {
+      message: 'Votre mot de passe est enregistré. Vous pouvez maintenant vous connecter.',
+      email: user.email,
+    };
   }
 }

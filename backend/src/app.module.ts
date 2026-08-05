@@ -14,7 +14,10 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { StatisticsModule } from './statistics/statistics.module';
 import { DecisionHelperModule } from './decision-helper/decision-helper.module';
+import { FormDefinitionsModule } from './form-definitions/form-definitions.module';
+import { MessagingModule } from './messaging/messaging.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PasswordChangeGuard } from './common/guards/password-change.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
 @Module({
@@ -38,10 +41,14 @@ import { RolesGuard } from './common/guards/roles.guard';
     AuditLogsModule,
     StatisticsModule,
     DecisionHelperModule,
+    FormDefinitionsModule,
+    MessagingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Bloque l'application tant qu'un mot de passe imposé n'a pas été changé
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
   ],
 })
 export class AppModule {}

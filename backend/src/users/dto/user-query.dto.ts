@@ -20,4 +20,12 @@ export class UserQueryDto extends PaginationQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'true = comptes en attente d’activation, false = comptes déjà activés',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  pendingActivation?: boolean;
 }

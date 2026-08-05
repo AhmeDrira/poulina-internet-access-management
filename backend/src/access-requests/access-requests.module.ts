@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { DecisionHelperModule } from '../decision-helper/decision-helper.module';
 import { Department, DepartmentSchema } from '../departments/schemas/department.schema';
+import { FormDefinitionsModule } from '../form-definitions/form-definitions.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Service, ServiceSchema } from '../services/schemas/service.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
@@ -25,6 +26,7 @@ import { RequestHistory, RequestHistorySchema } from './schemas/request-history.
     NotificationsModule,
     AuditLogsModule,
     DecisionHelperModule,
+    FormDefinitionsModule,
   ],
   controllers: [AccessRequestsController],
   providers: [AccessRequestsService, RequestExpirationService, RequestPdfService],

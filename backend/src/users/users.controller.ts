@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -13,7 +15,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../common/enums';
+import { ADMIN_ROLES, Role } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { getClientIp, getUserAgent } from '../common/utils/request.util';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -23,7 +25,7 @@ import { UsersService } from './users.service';
 
 @ApiTags('Utilisateurs')
 @ApiBearerAuth('JWT-auth')
-@Roles(Role.ADMIN)
+@Roles(...ADMIN_ROLES)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -34,6 +36,19 @@ export class UsersController {
     return this.usersService.findAll(query);
   }
 
+  @Get('summary')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Synthèse des comptes (répartition par rôle, comptes en attente d’activation)',
+  })
+  async summary() {
+    const [byRole, pending] = await Promise.all([
+      this.usersService.countByRole(),
+      this.usersService.findPendingActivation(),
+    ]);
+    return { byRole, pendingActivation: pending };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: "Détail d'un utilisateur" })
   findOne(@Param('id') id: string) {
@@ -41,9 +56,30 @@ export class UsersController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Création d’un utilisateur (rôle, département, service)' })
+  @ApiOperation({
+    summary:
+      'Création d’un compte : aucun mot de passe n’est saisi, un lien d’activation temporaire est renvoyé',
+  })
   create(@Body() dto: CreateUserDto, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.usersService.create(dto, {
+      actor,
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
+  }
+
+  @Post(':id/activation-link')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Génère un lien d’accès temporaire : nouvelle invitation, ou réinitialisation du mot de passe si le compte est déjà activé',
+  })
+  issueActivationLink(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.usersService.issueActivationLink(id, {
       actor,
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
@@ -86,7 +122,9 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Suppression définitive d’un utilisateur' })
+  @ApiOperation({
+    summary: 'Suppression définitive (refusée si le compte est référencé : préférer la désactivation)',
+  })
   remove(@Param('id') id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.usersService.remove(id, {
       actor,

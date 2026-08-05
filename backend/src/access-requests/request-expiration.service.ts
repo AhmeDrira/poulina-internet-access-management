@@ -3,12 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import {
-  AuditAction,
-  NotificationType,
-  REQUEST_TYPE_LABELS,
-  RequestStatus,
-} from '../common/enums';
+import { AuditAction, NotificationType, RequestStatus } from '../common/enums';
+import { FormDefinitionsService } from '../form-definitions/form-definitions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccessRequestsService } from './access-requests.service';
 import { AccessRequest, AccessRequestDocument } from './schemas/access-request.schema';
@@ -30,6 +26,7 @@ export class RequestExpirationService implements OnModuleInit {
     private readonly accessRequests: AccessRequestsService,
     private readonly notifications: NotificationsService,
     private readonly auditLogs: AuditLogsService,
+    private readonly formDefinitions: FormDefinitionsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -66,7 +63,7 @@ export class RequestExpirationService implements OnModuleInit {
         recipientId: request.requester,
         type: NotificationType.REQUEST_EXPIRED,
         title: 'Autorisation expirée',
-        message: `Votre autorisation ${request.reference} (${REQUEST_TYPE_LABELS[request.requestType]}) est arrivée à expiration. Soumettez une nouvelle demande si nécessaire.`,
+        message: `Votre autorisation ${request.reference} (${await this.formDefinitions.titleOf(request.requestType)}) est arrivée à expiration. Soumettez une nouvelle demande si nécessaire.`,
         relatedRequestId: request._id,
       });
       await this.auditLogs.record({
@@ -97,7 +94,7 @@ export class RequestExpirationService implements OnModuleInit {
         recipientId: request.requester,
         type: NotificationType.REQUEST_EXPIRING_SOON,
         title: 'Autorisation bientôt expirée',
-        message: `Votre autorisation ${request.reference} (${REQUEST_TYPE_LABELS[request.requestType]}) expire le ${request.expirationDate?.toLocaleDateString('fr-FR')}. Pensez à demander un renouvellement.`,
+        message: `Votre autorisation ${request.reference} (${await this.formDefinitions.titleOf(request.requestType)}) expire le ${request.expirationDate?.toLocaleDateString('fr-FR')}. Pensez à demander un renouvellement.`,
         relatedRequestId: request._id,
       });
       request.expiryReminderSent = true;

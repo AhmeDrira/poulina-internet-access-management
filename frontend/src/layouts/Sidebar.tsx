@@ -3,21 +3,24 @@ import {
   Bell,
   Building2,
   FilePlus2,
+  FileSliders,
   FileText,
   Globe,
   Layers,
   LayoutDashboard,
+  MessagesSquare,
   ScrollText,
   Users,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext';
-import { Role } from '../types';
+import { ADMIN_ROLES, GLOBAL_READ_ROLES, MESSAGING_ROLES, REQUESTER_ROLES, Role } from '../types';
 import { ROLE_LABELS } from '../utils/labels';
 
 interface SidebarProps {
   open: boolean;
   onClose: () => void;
   unreadCount: number;
+  messagingUnread: number;
 }
 
 interface NavItem {
@@ -28,7 +31,7 @@ interface NavItem {
   badge?: number;
 }
 
-export function Sidebar({ open, onClose, unreadCount }: SidebarProps) {
+export function Sidebar({ open, onClose, unreadCount, messagingUnread }: SidebarProps) {
   const { user } = useAuth();
   if (!user) return null;
 
@@ -38,38 +41,57 @@ export function Sidebar({ open, onClose, unreadCount }: SidebarProps) {
       to: '/requests/new',
       label: 'Nouvelle demande',
       icon: <FilePlus2 size={18} />,
-      roles: [Role.EMPLOYEE, Role.MANAGER, Role.NETWORK_TEAM],
+      roles: REQUESTER_ROLES,
     },
     {
       to: '/my-requests',
       label: 'Mes demandes',
       icon: <FileText size={18} />,
-      roles: [Role.EMPLOYEE, Role.MANAGER, Role.NETWORK_TEAM],
+      roles: REQUESTER_ROLES,
     },
     {
       to: '/requests',
       label: 'Toutes les demandes',
       icon: <FileText size={18} />,
-      roles: [Role.ADMIN, Role.SECURITY_OFFICER],
+      roles: GLOBAL_READ_ROLES,
+    },
+    {
+      to: '/messaging',
+      label: 'Messagerie interne',
+      icon: <MessagesSquare size={18} />,
+      roles: MESSAGING_ROLES,
+      badge: messagingUnread,
     },
     { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, badge: unreadCount },
   ];
 
   const adminItems: NavItem[] = [
-    { to: '/admin/users', label: 'Utilisateurs', icon: <Users size={18} />, roles: [Role.ADMIN] },
-    { to: '/admin/departments', label: 'Départements', icon: <Building2 size={18} />, roles: [Role.ADMIN] },
-    { to: '/admin/services', label: 'Services', icon: <Layers size={18} />, roles: [Role.ADMIN] },
+    { to: '/admin/users', label: 'Utilisateurs', icon: <Users size={18} />, roles: ADMIN_ROLES },
+    {
+      to: '/admin/forms',
+      label: 'Formulaires',
+      icon: <FileSliders size={18} />,
+      roles: [Role.SUPER_ADMIN],
+    },
+    {
+      to: '/admin/departments',
+      label: 'Départements',
+      icon: <Building2 size={18} />,
+      roles: ADMIN_ROLES,
+    },
+    { to: '/admin/services', label: 'Services', icon: <Layers size={18} />, roles: ADMIN_ROLES },
     {
       to: '/audit-logs',
       label: "Journal d'audit",
       icon: <ScrollText size={18} />,
-      roles: [Role.ADMIN, Role.SECURITY_OFFICER],
+      roles: GLOBAL_READ_ROLES,
     },
   ];
 
   const visible = (item: NavItem) => !item.roles || item.roles.includes(user.role);
   const mainItems = items.filter(visible);
   const managementItems = adminItems.filter(visible);
+  const managementTitle = user.role === Role.SUPER_ADMIN ? 'Supervision' : 'Administration';
 
   return (
     <>
@@ -103,7 +125,7 @@ export function Sidebar({ open, onClose, unreadCount }: SidebarProps) {
           ))}
           {managementItems.length > 0 && (
             <>
-              <div className="sidebar-section-title">Administration</div>
+              <div className="sidebar-section-title">{managementTitle}</div>
               {managementItems.map((item) => (
                 <NavLink
                   key={item.to}

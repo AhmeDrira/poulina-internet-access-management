@@ -5,12 +5,11 @@ import { getApiErrorMessage } from '../../api/client';
 import { requestsApi } from '../../api/requests.api';
 import { useToast } from '../../store/ToastContext';
 import { AccessRequest, RecommendationLevel } from '../../types';
-import { FORM_FIELDS, formatFormValue } from '../../utils/formDefinitions';
+import { useFormDefinitions } from '../../store/FormDefinitionsContext';
 import {
   ACCESS_TYPE_LABELS,
   DURATION_LABELS,
   RECOMMENDATION_LABELS,
-  REQUEST_TYPE_FULL_LABELS,
 } from '../../utils/labels';
 import { ScoreBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -39,6 +38,7 @@ interface DecisionModalProps {
 export function DecisionModal({ request, open, onClose, onDecided }: DecisionModalProps) {
   const toast = useToast();
   const navigate = useNavigate();
+  const { titleOf, describe } = useFormDefinitions();
   const [mode, setMode] = useState<Mode>('idle');
   const [comment, setComment] = useState('');
   const [reason, setReason] = useState('');
@@ -56,12 +56,7 @@ export function DecisionModal({ request, open, onClose, onDecided }: DecisionMod
 
   if (!request) return null;
   const decision = request.decisionSupport;
-  const specificEntries = FORM_FIELDS[request.requestType]
-    .filter((field) => request.formData && request.formData[field.key] !== undefined)
-    .map((field) => ({
-      label: field.label,
-      value: formatFormValue(request.requestType, field.key, request.formData[field.key]),
-    }));
+  const { entries: specificEntries } = describe(request.requestType, request.formData);
 
   const finish = (message: string) => {
     toast.success(message);
@@ -120,7 +115,7 @@ export function DecisionModal({ request, open, onClose, onDecided }: DecisionMod
       <div className="detail-grid" style={{ marginBottom: 16 }}>
         <div>
           <div className="detail-item-label">Type de formulaire</div>
-          <div className="detail-item-value">{REQUEST_TYPE_FULL_LABELS[request.requestType]}</div>
+          <div className="detail-item-value">{titleOf(request.requestType)}</div>
         </div>
         <div>
           <div className="detail-item-label">Demandeur</div>

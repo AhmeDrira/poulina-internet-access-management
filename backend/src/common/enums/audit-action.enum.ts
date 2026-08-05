@@ -25,4 +25,24 @@ export enum AuditAction {
   SERVICE_CREATED = 'SERVICE_CREATED',
   SERVICE_UPDATED = 'SERVICE_UPDATED',
   SERVICE_DELETED = 'SERVICE_DELETED',
+  // --- Cycle de vie d'un compte (création par invitation) ---
+  /** Compte créé par une personne habilitée, lien d'activation généré */
+  USER_INVITED = 'USER_INVITED',
+  /** Nouveau lien d'activation généré (l'ancien est invalidé) */
+  USER_INVITATION_RESENT = 'USER_INVITATION_RESENT',
+  /** L'employé a défini son mot de passe via le lien : compte utilisable */
+  ACCOUNT_ACTIVATED = 'ACCOUNT_ACTIVATED',
+  /** Lien d'activation invalide, expiré ou déjà utilisé */
+  ACTIVATION_FAILED = 'ACTIVATION_FAILED',
+  /** Changement de mot de passe imposé à la prochaine connexion */
+  PASSWORD_RESET_ENFORCED = 'PASSWORD_RESET_ENFORCED',
+  // --- Gestion des formulaires (super administrateur) ---
+  FORM_UPDATED = 'FORM_UPDATED',
+  FORM_ACTIVATED = 'FORM_ACTIVATED',
+  FORM_DEACTIVATED = 'FORM_DEACTIVATED',
+  FORM_RESET = 'FORM_RESET',
+  // --- Messagerie interne (contenu non journalisé, seul l'échange est tracé) ---
+  MESSAGE_SENT = 'MESSAGE_SENT',
+  THREAD_RESOLVED = 'THREAD_RESOLVED',
+  THREAD_REOPENED = 'THREAD_REOPENED',
 }

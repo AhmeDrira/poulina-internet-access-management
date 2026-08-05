@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import { AccessType, DurationType, RequestStatus } from '../common/enums';
 import {
-  AccessType,
-  DurationType,
-  REQUEST_TYPE_LABELS,
-  RequestStatus,
-} from '../common/enums';
-import { FORM_DEFINITIONS, formatFormValue } from './form-definitions';
+  DescribedFormData,
+  FormDefinitionsService,
+} from '../form-definitions/form-definitions.service';
 import { AccessRequestDocument } from './schemas/access-request.schema';
 
 const ACCESS_TYPE_LABELS: Record<AccessType, string> = {
@@ -64,7 +62,15 @@ function personName(value: any): string {
  */
 @Injectable()
 export class RequestPdfService {
+  constructor(private readonly formDefinitions: FormDefinitionsService) {}
+
   async generate(request: AccessRequestDocument): Promise<Buffer> {
+    // Le formulaire est décrit d'après sa définition courante en base
+    const form = await this.formDefinitions.describeFormData(
+      request.requestType,
+      request.formData as Record<string, unknown>,
+    );
+
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
     const chunks: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -72,9 +78,9 @@ export class RequestPdfService {
       doc.on('end', () => resolve(Buffer.concat(chunks))),
     );
 
-    this.drawHeader(doc, request);
+    this.drawHeader(doc, request, form.title);
     this.drawRequesterSection(doc, request);
-    this.drawContentSection(doc, request);
+    this.drawContentSection(doc, request, form);
     this.drawManagerSection(doc, request);
     this.drawNetworkSection(doc, request);
     this.drawSignatures(doc);
@@ -86,7 +92,11 @@ export class RequestPdfService {
 
   // ------------------------------------------------------------------
 
-  private drawHeader(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+  private drawHeader(
+    doc: PDFKit.PDFDocument,
+    request: AccessRequestDocument,
+    formTitle: string,
+  ): void {
     doc
       .font('Helvetica-Bold')
       .fontSize(13)
@@ -122,7 +132,7 @@ export class RequestPdfService {
       .font('Helvetica-Bold')
       .fontSize(14)
       .fillColor(INK)
-      .text(REQUEST_TYPE_LABELS[request.requestType].toUpperCase(), 48, 106, {
+      .text(formTitle.toUpperCase(), 48, 106, {
         width: 499,
         align: 'center',
       });
@@ -208,7 +218,11 @@ export class RequestPdfService {
     ]);
   }
 
-  private drawContentSection(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {
+  private drawContentSection(
+    doc: PDFKit.PDFDocument,
+    request: AccessRequestDocument,
+    form: DescribedFormData,
+  ): void {
     this.sectionTitle(doc, '2. Contenu de la demande');
 
     const pairs: [string, string][] = [];
@@ -221,31 +235,24 @@ export class RequestPdfService {
         ? 'Permanente'
         : `Temporaire — ${request.durationDays ?? '—'} jour(s)`,
     ]);
-
-    const definitions = FORM_DEFINITIONS[request.requestType];
-    const formData = (request.formData ?? {}) as Record<string, unknown>;
-    for (const field of definitions) {
-      if (field.kind === 'commitment') continue; // rendu séparément ci-dessous
-      if (formData[field.key] === undefined) continue;
-      pairs.push([field.label, formatFormValue(request.requestType, field.key, formData[field.key])]);
+    for (const entry of form.entries) {
+      pairs.push([entry.label, entry.value]);
     }
     this.keyValues(doc, pairs);
 
     // Engagements (cases cochées)
-    for (const field of definitions) {
-      if (field.kind !== 'commitment') continue;
-      const accepted = formData[field.key] === true;
+    for (const commitment of form.commitments) {
       if (doc.y > 720) doc.addPage();
       const y = doc.y;
       doc.rect(48, y, 10, 10).lineWidth(0.9).strokeColor(INK).stroke();
-      if (accepted) {
+      if (commitment.accepted) {
         doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text('X', 50.5, y + 1);
       }
       doc
         .font('Helvetica')
         .fontSize(8.5)
         .fillColor(INK)
-        .text(field.label, 64, y, { width: 483 });
+        .text(commitment.label, 64, y, { width: 483 });
       doc.moveDown(0.5);
       doc.x = 48;
     }

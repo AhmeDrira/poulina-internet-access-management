@@ -13,6 +13,17 @@ export interface NotifyInput {
   relatedRequestId?: string | Types.ObjectId | null;
 }
 
+/** Lien d'accès temporaire adressé à un employé dont le compte vient d'être créé */
+export interface AccountInvitationInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  activationUrl: string;
+  expiresAt: Date;
+  /** true = redéfinition du mot de passe d'un compte déjà activé */
+  isReset: boolean;
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -56,6 +67,23 @@ export class NotificationsService {
   private async dispatchEmail(input: NotifyInput): Promise<void> {
     this.logger.debug(
       `[EMAIL simulé] → destinataire ${input.recipientId} | ${input.title} : ${input.message}`,
+    );
+  }
+
+  /**
+   * Envoi du lien d'accès temporaire à un nouvel employé (ou réinitialisation).
+   *
+   * Le compte n'existe pas encore côté session : aucune notification interne
+   * n'est créée, le lien part par email. Tant qu'aucun transport SMTP n'est
+   * configuré, la personne habilitée transmet le lien affiché à l'écran.
+   */
+  async dispatchAccountInvitation(input: AccountInvitationInput): Promise<void> {
+    const objet = input.isReset
+      ? 'Réinitialisation de votre mot de passe'
+      : 'Activation de votre compte — Portail des accès Poulina';
+    this.logger.debug(
+      `[EMAIL simulé] → ${input.email} | ${objet} : lien valable jusqu'au ` +
+        `${input.expiresAt.toLocaleString('fr-FR')} — ${input.activationUrl}`,
     );
   }
 

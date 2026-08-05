@@ -4,12 +4,11 @@ import { requestsApi } from '../../api/requests.api';
 import { useToast } from '../../store/ToastContext';
 import { AccessRequest, DurationType, RequestType } from '../../types';
 import { formatDate, toInputDate } from '../../utils/date';
-import { FORM_FIELDS, formatFormValue } from '../../utils/formDefinitions';
+import { useFormDefinitions } from '../../store/FormDefinitionsContext';
 import {
   ACCESS_TYPE_LABELS,
   DURATION_LABELS,
   fullName,
-  REQUEST_TYPE_FULL_LABELS,
 } from '../../utils/labels';
 import { Button } from '../ui/Button';
 import { FormField, Input, Select, Textarea } from '../ui/FormField';
@@ -45,6 +44,7 @@ function defaultExpiration(activation: string, days: number | null): string {
  */
 export function ProcessModal({ request, open, onClose, onProcessed }: ProcessModalProps) {
   const toast = useToast();
+  const { titleOf, describe } = useFormDefinitions();
   const [activated, setActivated] = useState(true);
   const [activationDate, setActivationDate] = useState('');
   const [expirationDate, setExpirationDate] = useState('');
@@ -69,12 +69,7 @@ export function ProcessModal({ request, open, onClose, onProcessed }: ProcessMod
 
   if (!request) return null;
   const isTemporary = request.durationType === DurationType.TEMPORARY;
-  const specificEntries = FORM_FIELDS[request.requestType]
-    .filter((field) => request.formData && request.formData[field.key] !== undefined)
-    .map((field) => ({
-      label: field.label,
-      value: formatFormValue(request.requestType, field.key, request.formData[field.key]),
-    }));
+  const { entries: specificEntries } = describe(request.requestType, request.formData);
 
   const handleSubmit = async () => {
     const nextErrors: { expiration?: string; comment?: string } = {};
@@ -133,7 +128,7 @@ export function ProcessModal({ request, open, onClose, onProcessed }: ProcessMod
       <div className="detail-grid" style={{ marginBottom: 14 }}>
         <div>
           <div className="detail-item-label">Type de formulaire</div>
-          <div className="detail-item-value">{REQUEST_TYPE_FULL_LABELS[request.requestType]}</div>
+          <div className="detail-item-value">{titleOf(request.requestType)}</div>
         </div>
         <div>
           <div className="detail-item-label">Demandeur</div>

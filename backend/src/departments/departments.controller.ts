@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../common/enums';
+import { ADMIN_ROLES } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { getClientIp, getUserAgent } from '../common/utils/request.util';
 import { DepartmentsService } from './departments.service';
@@ -29,7 +29,7 @@ export class DepartmentsController {
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Création d’un département (admin)' })
   create(@Body() dto: CreateDepartmentDto, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.departmentsService.create(dto, {
@@ -40,7 +40,7 @@ export class DepartmentsController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Mise à jour d’un département — dont le chef responsable (admin)' })
   update(
     @Param('id') id: string,
@@ -56,7 +56,7 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Suppression d’un département (refusée s’il est utilisé)' })
   remove(@Param('id') id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.departmentsService.remove(id, {

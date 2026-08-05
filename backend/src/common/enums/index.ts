@@ -5,3 +5,5 @@ export * from './access-type.enum';
 export * from './notification-type.enum';
 export * from './audit-action.enum';
 export * from './recommendation.enum';
+export * from './form-field-kind.enum';
+export * from './thread-status.enum';

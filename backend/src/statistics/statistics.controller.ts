@@ -2,13 +2,13 @@ import { Controller, Get, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../common/enums';
+import { GLOBAL_READ_ROLES, Role } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { StatisticsService } from './statistics.service';
 
 @ApiTags('Statistiques')
 @ApiBearerAuth('JWT-auth')
-@Roles(Role.ADMIN, Role.SECURITY_OFFICER, Role.MANAGER)
+@Roles(...GLOBAL_READ_ROLES, Role.MANAGER)
 @Controller('statistics')
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}

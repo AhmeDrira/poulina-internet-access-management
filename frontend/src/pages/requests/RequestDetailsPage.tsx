@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { FileDown, FileSearch, Pencil } from 'lucide-react';
+import { FileDown, FileSearch, MessagesSquare, Pencil } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
 import { requestsApi } from '../../api/requests.api';
 import { ScoreBadge, StatusBadge } from '../../components/ui/Badge';
@@ -11,19 +11,36 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingBlock } from '../../components/ui/Spinner';
 import { RequestTimeline } from '../../components/requests/RequestTimeline';
+import { RequestThreadPanel } from '../../components/messaging/RequestThreadPanel';
 import { useApi } from '../../hooks/useApi';
 import { useAuth } from '../../store/AuthContext';
-import { RecommendationLevel, RequestStatus, Role } from '../../types';
+import { useFormDefinitions } from '../../store/FormDefinitionsContext';
+import {
+  GLOBAL_READ_ROLES,
+  MESSAGING_ROLES,
+  RecommendationLevel,
+  RequestStatus,
+  Role,
+} from '../../types';
 import { formatDate, formatDateTime } from '../../utils/date';
-import { FORM_FIELDS, formatFormValue } from '../../utils/formDefinitions';
 import { useToast } from '../../store/ToastContext';
 import {
   ACCESS_TYPE_LABELS,
   DURATION_LABELS,
   fullName,
   RECOMMENDATION_LABELS,
-  REQUEST_TYPE_FULL_LABELS,
 } from '../../utils/labels';
+
+/** Statuts à partir desquels le chef de département et l'équipe réseau échangent */
+const THREAD_STATUSES: RequestStatus[] = [
+  RequestStatus.APPROVED_BY_MANAGER,
+  RequestStatus.PENDING_NETWORK,
+  RequestStatus.IN_PROGRESS_NETWORK,
+  RequestStatus.ACTIVATED,
+  RequestStatus.REJECTED_TECHNICAL,
+  RequestStatus.CLOSED,
+  RequestStatus.EXPIRED,
+];
 
 const SCORE_BAR_COLORS: Record<RecommendationLevel, string> = {
   [RecommendationLevel.LIKELY_LEGITIMATE]: 'var(--green-600)',
@@ -45,6 +62,7 @@ export default function RequestDetailsPage() {
   const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   const toast = useToast();
+  const { titleOf, describe } = useFormDefinitions();
   const [downloading, setDownloading] = useState(false);
 
   const { data: request, loading, error } = useApi(() => requestsApi.get(id!), [id]);
@@ -86,23 +104,29 @@ export default function RequestDetailsPage() {
     );
   }
 
-  const canSeeScore = hasRole(Role.MANAGER, Role.ADMIN, Role.SECURITY_OFFICER);
+  const canSeeScore = hasRole(Role.MANAGER, ...GLOBAL_READ_ROLES);
   const decision = request.decisionSupport;
   const hasNetworkInfo =
     request.processedBy || request.networkComment || request.activationDate;
   const isOwner = user?._id === request.requester?._id;
-  const specificEntries = FORM_FIELDS[request.requestType]
-    .filter((field) => request.formData && request.formData[field.key] !== undefined)
-    .map((field) => ({
-      label: field.label,
-      value: formatFormValue(request.requestType, field.key, request.formData[field.key]),
-    }));
+  const { entries: specificEntries, commitments } = describe(
+    request.requestType,
+    request.formData,
+  );
+  // Discussion interne : chef du département concerné et équipe réseau, à
+  // partir de la validation du chef, et jamais sur sa propre demande.
+  const canDiscuss =
+    !!user &&
+    MESSAGING_ROLES.includes(user.role) &&
+    !isOwner &&
+    THREAD_STATUSES.includes(request.status) &&
+    (user.role !== Role.MANAGER || user.department?._id === request.department?._id);
 
   return (
     <>
       <PageHeader
         title={`Demande ${request.reference}`}
-        subtitle={`${REQUEST_TYPE_FULL_LABELS[request.requestType]} — créée le ${formatDateTime(request.createdAt)}`}
+        subtitle={`${titleOf(request.requestType)} — créée le ${formatDateTime(request.createdAt)}`}
         actions={
           <div className="flex-row" style={{ alignItems: 'center' }}>
             <StatusBadge status={request.status} />
@@ -150,7 +174,7 @@ export default function RequestDetailsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <Card title="Informations de la demande">
             <div className="detail-grid" style={{ marginBottom: 18 }}>
-              <DetailItem label="Type de formulaire" value={REQUEST_TYPE_FULL_LABELS[request.requestType]} />
+              <DetailItem label="Type de formulaire" value={titleOf(request.requestType)} />
               <DetailItem label="Demandeur" value={`${request.firstName} ${request.lastName}`} />
               <DetailItem label="Matricule" value={<span className="font-mono">{request.matricule}</span>} />
               <DetailItem label="Email" value={request.email} />
@@ -173,9 +197,49 @@ export default function RequestDetailsPage() {
                 <DetailItem key={entry.label} label={entry.label} value={entry.value} />
               ))}
             </div>
+            {commitments.length > 0 && (
+              <div style={{ marginBottom: 18 }}>
+                <div className="detail-item-label">Engagements</div>
+                {commitments.map((commitment) => (
+                  <div
+                    key={commitment.label}
+                    className="text-small"
+                    style={{ display: 'flex', gap: 8, marginTop: 6, lineHeight: 1.5 }}
+                  >
+                    <span
+                      style={{
+                        color: commitment.accepted ? 'var(--green-600)' : 'var(--red-600)',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {commitment.accepted ? '☑' : '☐'}
+                    </span>
+                    <span>{commitment.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="detail-item-label">Justification</div>
             <div className="justification-block">{request.justification}</div>
           </Card>
+
+          {canDiscuss && (
+            <Card
+              title={
+                <span className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                  <MessagesSquare size={16} /> Discussion interne
+                </span>
+              }
+              subtitle={
+                user?.role === Role.MANAGER
+                  ? 'Échange avec l’équipe réseau sur le traitement de cette demande'
+                  : 'Échange avec le chef de département sur le traitement de cette demande'
+              }
+            >
+              <RequestThreadPanel requestId={request._id} />
+            </Card>
+          )}
 
           {request.status === 'REJECTED' && request.rejectionReason && (
             <Alert variant="danger">

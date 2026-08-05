@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Request } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../common/enums';
+import { ADMIN_ROLES } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { getClientIp, getUserAgent } from '../common/utils/request.util';
 import { CreateServiceDto } from './dto/create-service.dto';
@@ -30,7 +30,7 @@ export class ServicesController {
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Création d’un service rattaché à un département (admin)' })
   create(@Body() dto: CreateServiceDto, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.servicesService.create(dto, {
@@ -41,7 +41,7 @@ export class ServicesController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Mise à jour d’un service (admin)' })
   update(
     @Param('id') id: string,
@@ -57,7 +57,7 @@ export class ServicesController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles(...ADMIN_ROLES)
   @ApiOperation({ summary: 'Suppression d’un service (refusée s’il est utilisé)' })
   remove(@Param('id') id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.servicesService.remove(id, {

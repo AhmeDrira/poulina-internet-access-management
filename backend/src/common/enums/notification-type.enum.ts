@@ -21,4 +21,6 @@ export enum NotificationType {
   REQUEST_EXPIRED = 'REQUEST_EXPIRED',
   /** Accès proche de l'expiration (employé) */
   REQUEST_EXPIRING_SOON = 'REQUEST_EXPIRING_SOON',
+  /** Nouveau message dans la messagerie interne (chef de département ↔ équipe réseau) */
+  MESSAGE_RECEIVED = 'MESSAGE_RECEIVED',
 }

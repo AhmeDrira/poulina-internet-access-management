@@ -1,5 +1,5 @@
 import { api } from './client';
-import { Paginated, Role, User } from '../types';
+import { ActivationLink, CreatedUser, Paginated, Role, User, UsersSummary } from '../types';
 
 export interface UserListParams {
   page?: number;
@@ -8,14 +8,18 @@ export interface UserListParams {
   role?: Role | '';
   department?: string;
   isActive?: boolean | '';
+  pendingActivation?: boolean | '';
 }
 
+/**
+ * Aucun mot de passe n'est transmis : les comptes sont créés par une personne
+ * habilitée puis activés par l'employé via un lien temporaire.
+ */
 export interface UserPayload {
   firstName: string;
   lastName: string;
   matricule: string;
   email: string;
-  password?: string;
   role: Role;
   department?: string | null;
   service?: string | null;
@@ -35,13 +39,29 @@ export const usersApi = {
     return data;
   },
 
-  async create(payload: UserPayload): Promise<User> {
-    const { data } = await api.post<User>('/users', payload);
+  /** Synthèse des comptes (réservée au super administrateur) */
+  async summary(): Promise<UsersSummary> {
+    const { data } = await api.get<UsersSummary>('/users/summary');
+    return data;
+  },
+
+  /** Crée le compte et renvoie le lien d'activation à transmettre à l'employé */
+  async create(payload: UserPayload): Promise<CreatedUser> {
+    const { data } = await api.post<CreatedUser>('/users', payload);
     return data;
   },
 
   async update(id: string, payload: Partial<UserPayload>): Promise<User> {
     const { data } = await api.patch<User>(`/users/${id}`, payload);
+    return data;
+  },
+
+  /**
+   * Génère un lien d'accès temporaire : nouvelle invitation si le compte n'a
+   * jamais été activé, réinitialisation du mot de passe sinon.
+   */
+  async issueActivationLink(id: string): Promise<ActivationLink> {
+    const { data } = await api.post<ActivationLink>(`/users/${id}/activation-link`, {});
     return data;
   },
 

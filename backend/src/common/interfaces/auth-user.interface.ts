@@ -10,4 +10,6 @@ export interface AuthUser {
   matricule: string;
   departmentId: string | null;
   serviceId: string | null;
+  /** true si un changement de mot de passe est imposé (accès à l'app bloqué) */
+  mustChangePassword: boolean;
 }

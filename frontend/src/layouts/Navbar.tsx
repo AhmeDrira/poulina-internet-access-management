@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu } from 'lucide-react';
+import { Bell, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useAuth } from '../store/AuthContext';
 import { ROLE_LABELS } from '../utils/labels';
 
@@ -48,6 +48,14 @@ export function Navbar({ onToggleSidebar, unreadCount }: NavbarProps) {
             <div className="navbar-user-role">{ROLE_LABELS[user.role]}</div>
           </div>
         </div>
+        <button
+          className="navbar-icon-btn"
+          onClick={() => navigate('/change-password')}
+          aria-label="Changer mon mot de passe"
+          title="Changer mon mot de passe"
+        >
+          <KeyRound size={19} />
+        </button>
         <button className="navbar-icon-btn" onClick={handleLogout} aria-label="Se déconnecter" title="Se déconnecter">
           <LogOut size={19} />
         </button>

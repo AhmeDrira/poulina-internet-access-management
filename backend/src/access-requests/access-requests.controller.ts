@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { AuditAction, Role } from '../common/enums';
+import { AuditAction, GLOBAL_READ_ROLES, REQUESTER_ROLES, Role } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { getClientIp, getUserAgent } from '../common/utils/request.util';
 import { AccessRequestsService } from './access-requests.service';
@@ -29,7 +29,7 @@ export class AccessRequestsController {
   ) {}
 
   @Post()
-  @Roles(Role.EMPLOYEE, Role.MANAGER, Role.NETWORK_TEAM)
+  @Roles(...REQUESTER_ROLES)
   @ApiOperation({ summary: "Soumettre une demande d'accès Internet" })
   create(
     @CurrentUser() user: AuthUser,
@@ -49,7 +49,7 @@ export class AccessRequestsController {
   }
 
   @Get()
-  @Roles(Role.MANAGER, Role.NETWORK_TEAM, Role.ADMIN, Role.SECURITY_OFFICER)
+  @Roles(Role.MANAGER, Role.NETWORK_TEAM, ...GLOBAL_READ_ROLES)
   @ApiOperation({
     summary:
       'Demandes visibles selon le rôle (chef : son département, réseau : file validée, admin/sécurité : tout)',

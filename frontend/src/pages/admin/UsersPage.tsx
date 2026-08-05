@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Pencil, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
+import { Copy, KeyRound, Link2, Pencil, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
 import { departmentsApi } from '../../api/departments.api';
 import { servicesApi } from '../../api/services.api';
 import { usersApi, UserPayload } from '../../api/users.api';
+import { Alert } from '../../components/ui/Alert';
 import { Badge, RoleBadge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -15,20 +16,78 @@ import { Pagination } from '../../components/ui/Pagination';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { useApi } from '../../hooks/useApi';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useAuth } from '../../store/AuthContext';
 import { useToast } from '../../store/ToastContext';
-import { Department, Role, ServiceEntity, User } from '../../types';
+import {
+  accountState,
+  ActivationLink,
+  Department,
+  PRIVILEGED_ROLES,
+  Role,
+  ServiceEntity,
+  User,
+} from '../../types';
 import { formatDateTime } from '../../utils/date';
-import { ROLE_OPTIONS } from '../../utils/labels';
+import {
+  ACCOUNT_STATE_COLORS,
+  ACCOUNT_STATE_LABELS,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
+  ROLE_OPTIONS,
+} from '../../utils/labels';
+
+/** Bloc d'affichage du lien d'accès temporaire (visible une seule fois) */
+function ActivationLinkPanel({ link, name }: { link: ActivationLink; name: string }) {
+  const toast = useToast();
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      toast.success('Lien copié dans le presse-papiers.');
+    } catch {
+      toast.error('Copie impossible : sélectionnez le lien manuellement.');
+    }
+  };
+
+  return (
+    <>
+      <Alert variant="success">
+        {link.isReset
+          ? `Un lien de réinitialisation a été généré pour ${name}.`
+          : `Le compte de ${name} est créé. Transmettez-lui ce lien pour qu'il définisse son mot de passe.`}
+      </Alert>
+      <div className="activation-link-box">
+        <code>{link.url}</code>
+        <Button size="sm" variant="secondary" icon={<Copy size={14} />} onClick={copy}>
+          Copier
+        </Button>
+      </div>
+      <p className="text-small text-muted">
+        Lien à usage unique, valable jusqu’au <strong>{formatDateTime(link.expiresAt)}</strong>. Il
+        devient inutilisable dès que le mot de passe est défini. Ce lien n’est affiché qu’une fois :
+        un nouveau peut être généré à tout moment depuis la liste des utilisateurs.
+      </p>
+    </>
+  );
+}
 
 interface UserFormModalProps {
   open: boolean;
   user: User | null;
   departments: Department[];
+  assignableRoles: { value: Role; label: string }[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormModalProps) {
+function UserFormModal({
+  open,
+  user,
+  departments,
+  assignableRoles,
+  onClose,
+  onSaved,
+}: UserFormModalProps) {
   const toast = useToast();
   const isEdit = user !== null;
   const [form, setForm] = useState({
@@ -36,7 +95,6 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
     lastName: '',
     matricule: '',
     email: '',
-    password: '',
     role: Role.EMPLOYEE as Role,
     department: '',
     service: '',
@@ -45,16 +103,19 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
   const [services, setServices] = useState<ServiceEntity[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [createdLink, setCreatedLink] = useState<{ link: ActivationLink; name: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (open) {
       setErrors({});
+      setCreatedLink(null);
       setForm({
         firstName: user?.firstName ?? '',
         lastName: user?.lastName ?? '',
         matricule: user?.matricule ?? '',
         email: user?.email ?? '',
-        password: '',
         role: user?.role ?? Role.EMPLOYEE,
         department: user?.department?._id ?? '',
         service: user?.service?._id ?? '',
@@ -83,12 +144,6 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
     if (!form.lastName.trim()) nextErrors.lastName = 'Le nom est obligatoire.';
     if (!form.matricule.trim()) nextErrors.matricule = 'Le matricule est obligatoire.';
     if (!/^\S+@\S+\.\S+$/.test(form.email)) nextErrors.email = "L'adresse email est invalide.";
-    if (!isEdit && form.password.length < 8) {
-      nextErrors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
-    }
-    if (isEdit && form.password && form.password.length < 8) {
-      nextErrors.password = 'Le mot de passe doit contenir au moins 8 caractères.';
-    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -102,27 +157,43 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
       service: form.service || null,
       position: form.position.trim(),
     };
-    if (form.password) {
-      payload.password = form.password;
-    }
 
     setSubmitting(true);
     try {
       if (isEdit && user) {
         await usersApi.update(user._id, payload);
         toast.success('Utilisateur mis à jour.');
+        onSaved();
+        onClose();
       } else {
-        await usersApi.create(payload);
-        toast.success('Utilisateur créé.');
+        const created = await usersApi.create(payload);
+        // Le lien n'est renvoyé qu'à la création : on l'affiche avant de fermer
+        setCreatedLink({
+          link: created.activation,
+          name: `${created.user.firstName} ${created.user.lastName}`,
+        });
+        onSaved();
       }
-      onSaved();
-      onClose();
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (createdLink) {
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Compte créé — lien d’activation"
+        width={620}
+        footer={<Button onClick={onClose}>Terminer</Button>}
+      >
+        <ActivationLinkPanel link={createdLink.link} name={createdLink.name} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -136,12 +207,18 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
             Annuler
           </Button>
           <Button onClick={handleSubmit} loading={submitting}>
-            {isEdit ? 'Enregistrer' : 'Créer'}
+            {isEdit ? 'Enregistrer' : 'Créer le compte'}
           </Button>
         </>
       }
     >
       <form onSubmit={handleSubmit} noValidate>
+        {!isEdit && (
+          <Alert variant="info">
+            Aucun mot de passe n’est saisi ici : à la création, l’application génère un lien
+            d’activation temporaire que l’employé utilisera pour définir lui-même son mot de passe.
+          </Alert>
+        )}
         <div className="form-grid">
           <FormField label="Prénom" required error={errors.firstName}>
             <Input value={form.firstName} onChange={(e) => set('firstName', e.target.value)} hasError={!!errors.firstName} />
@@ -155,17 +232,9 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
           <FormField label="Email professionnel" required error={errors.email}>
             <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} hasError={!!errors.email} />
           </FormField>
-          <FormField
-            label="Mot de passe"
-            required={!isEdit}
-            error={errors.password}
-            hint={isEdit ? 'Laisser vide pour conserver le mot de passe actuel.' : '8 caractères minimum.'}
-          >
-            <Input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} hasError={!!errors.password} autoComplete="new-password" />
-          </FormField>
-          <FormField label="Rôle" required>
+          <FormField label="Rôle" required hint={ROLE_DESCRIPTIONS[form.role]}>
             <Select value={form.role} onChange={(e) => set('role', e.target.value)}>
-              {ROLE_OPTIONS.map((option) => (
+              {assignableRoles.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -209,16 +278,25 @@ function UserFormModal({ open, user, departments, onClose, onSaved }: UserFormMo
 
 export default function UsersPage() {
   const toast = useToast();
+  const { user: currentUser } = useAuth();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState<Role | ''>('');
   const [department, setDepartment] = useState('');
-  const [activeFilter, setActiveFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [toToggle, setToToggle] = useState<User | null>(null);
   const [toDelete, setToDelete] = useState<User | null>(null);
+  const [toLink, setToLink] = useState<User | null>(null);
+  const [issuedLink, setIssuedLink] = useState<{ link: ActivationLink; name: string } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const isSuperAdmin = currentUser?.role === Role.SUPER_ADMIN;
+  // Un administrateur simple ne peut pas créer ni promouvoir un compte privilégié
+  const assignableRoles = ROLE_OPTIONS.filter(
+    (option) => isSuperAdmin || !PRIVILEGED_ROLES.includes(option.value),
+  );
 
   const debouncedSearch = useDebounce(search);
   const departments = useApi(() => departmentsApi.list(), []);
@@ -230,9 +308,10 @@ export default function UsersPage() {
         search: debouncedSearch,
         role,
         department,
-        isActive: activeFilter === '' ? '' : activeFilter === 'active',
+        isActive: stateFilter === 'disabled' ? false : stateFilter === 'active' ? true : '',
+        pendingActivation: stateFilter === 'pending' ? true : '',
       }),
-    [page, debouncedSearch, role, department, activeFilter],
+    [page, debouncedSearch, role, department, stateFilter],
   );
 
   const handleToggle = async () => {
@@ -270,6 +349,21 @@ export default function UsersPage() {
     }
   };
 
+  const handleIssueLink = async () => {
+    if (!toLink) return;
+    setActionLoading(true);
+    try {
+      const link = await usersApi.issueActivationLink(toLink._id);
+      setIssuedLink({ link, name: `${toLink.firstName} ${toLink.lastName}` });
+      setToLink(null);
+      list.reload();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const columns: Column<User>[] = [
     {
       key: 'user',
@@ -299,12 +393,22 @@ export default function UsersPage() {
         </div>
       ),
     },
-    { key: 'position', header: 'Poste', render: (row) => row.position || '—' },
     {
-      key: 'isActive',
-      header: 'Statut',
-      render: (row) =>
-        row.isActive ? <Badge color="green">Actif</Badge> : <Badge color="slate">Inactif</Badge>,
+      key: 'state',
+      header: 'État du compte',
+      render: (row) => {
+        const state = accountState(row);
+        return (
+          <div>
+            <Badge color={ACCOUNT_STATE_COLORS[state]}>{ACCOUNT_STATE_LABELS[state]}</Badge>
+            {row.mustChangePassword && (
+              <div className="text-small text-muted" style={{ marginTop: 3 }}>
+                Changement de mot de passe imposé
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'lastLoginAt',
@@ -329,6 +433,17 @@ export default function UsersPage() {
           <Button
             size="sm"
             variant="ghost"
+            title={
+              row.activatedAt
+                ? 'Générer un lien de réinitialisation du mot de passe'
+                : 'Générer un nouveau lien d’activation'
+            }
+            icon={row.activatedAt ? <KeyRound size={15} /> : <Link2 size={15} />}
+            onClick={() => setToLink(row)}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
             title={row.isActive ? 'Désactiver' : 'Réactiver'}
             icon={row.isActive ? <UserX size={15} /> : <UserCheck size={15} />}
             onClick={() => setToToggle(row)}
@@ -349,7 +464,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Gestion des utilisateurs"
-        subtitle="Comptes, rôles et affectations aux départements et services"
+        subtitle="Comptes, rôles, affectations et liens d’accès temporaires"
         actions={
           <Button
             icon={<UserPlus size={16} />}
@@ -362,6 +477,12 @@ export default function UsersPage() {
           </Button>
         }
       />
+
+      {!isSuperAdmin && (
+        <Alert variant="info">
+          La gestion des comptes administrateurs est réservée au super administrateur.
+        </Alert>
+      )}
 
       <Card noPadding>
         <div className="table-toolbar">
@@ -404,16 +525,17 @@ export default function UsersPage() {
             ))}
           </Select>
           <Select
-            value={activeFilter}
+            value={stateFilter}
             onChange={(e) => {
-              setActiveFilter(e.target.value);
+              setStateFilter(e.target.value);
               setPage(1);
             }}
-            style={{ maxWidth: 150 }}
+            style={{ maxWidth: 200 }}
           >
-            <option value="">Tous</option>
+            <option value="">Tous les états</option>
             <option value="active">Actifs</option>
-            <option value="inactive">Inactifs</option>
+            <option value="pending">En attente d’activation</option>
+            <option value="disabled">Désactivés</option>
           </Select>
         </div>
         <DataTable
@@ -437,9 +559,45 @@ export default function UsersPage() {
         open={formOpen}
         user={editing}
         departments={departments.data ?? []}
+        assignableRoles={assignableRoles}
         onClose={() => setFormOpen(false)}
         onSaved={list.reload}
       />
+
+      {/* Lien généré depuis la liste (renvoi d'invitation ou réinitialisation) */}
+      <Modal
+        open={issuedLink !== null}
+        onClose={() => setIssuedLink(null)}
+        title="Lien d’accès temporaire"
+        width={620}
+        footer={<Button onClick={() => setIssuedLink(null)}>Terminer</Button>}
+      >
+        {issuedLink && <ActivationLinkPanel link={issuedLink.link} name={issuedLink.name} />}
+      </Modal>
+
+      <ConfirmDialog
+        open={toLink !== null}
+        title={toLink?.activatedAt ? 'Réinitialiser le mot de passe' : 'Renvoyer le lien d’activation'}
+        message={
+          toLink?.activatedAt ? (
+            <>
+              Un lien temporaire sera généré pour {toLink?.firstName} {toLink?.lastName}, et un
+              changement de mot de passe lui sera imposé à sa prochaine connexion. Son mot de passe
+              actuel reste utilisable jusqu’à ce changement.
+            </>
+          ) : (
+            <>
+              Un nouveau lien d’activation sera généré pour {toLink?.firstName} {toLink?.lastName}.
+              Tout lien précédent devient immédiatement invalide.
+            </>
+          )
+        }
+        confirmLabel="Générer le lien"
+        loading={actionLoading}
+        onConfirm={handleIssueLink}
+        onCancel={() => setToLink(null)}
+      />
+
       <ConfirmDialog
         open={toToggle !== null}
         title={toToggle?.isActive ? 'Désactiver le compte' : 'Réactiver le compte'}
@@ -454,10 +612,17 @@ export default function UsersPage() {
         onConfirm={handleToggle}
         onCancel={() => setToToggle(null)}
       />
+
       <ConfirmDialog
         open={toDelete !== null}
         title="Supprimer l'utilisateur"
-        message={`Supprimer définitivement le compte de ${toDelete?.firstName} ${toDelete?.lastName} ? Cette action est irréversible.`}
+        message={
+          <>
+            Supprimer définitivement le compte de {toDelete?.firstName} {toDelete?.lastName} ? Cette
+            action est irréversible. Si ce compte est déjà intervenu dans des demandes, la
+            suppression sera refusée : préférez la désactivation pour préserver la traçabilité.
+          </>
+        }
         confirmLabel="Supprimer"
         variant="danger"
         loading={actionLoading}

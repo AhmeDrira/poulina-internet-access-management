@@ -1,15 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsEmail,
-  IsEnum,
-  IsMongoId,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsEmail, IsEnum, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Role } from '../../common/enums';
 
+/**
+ * Création d'un compte par une personne habilitée.
+ * Aucun mot de passe n'est saisi ici : l'application génère un lien
+ * d'activation temporaire que l'employé utilise pour définir le sien.
+ */
 export class CreateUserDto {
   @ApiProperty({ example: 'Ahmed' })
   @IsString()
@@ -29,11 +26,6 @@ export class CreateUserDto {
   @ApiProperty({ example: 'ahmed.drira@poulina.tn' })
   @IsEmail({}, { message: "L'adresse email est invalide." })
   email: string;
-
-  @ApiProperty({ minLength: 8 })
-  @IsString()
-  @MinLength(8, { message: 'Le mot de passe doit contenir au moins 8 caractères.' })
-  password: string;
 
   @ApiProperty({ enum: Role, example: Role.EMPLOYEE })
   @IsEnum(Role, { message: 'Rôle invalide.' })

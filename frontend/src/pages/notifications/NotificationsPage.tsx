@@ -6,6 +6,7 @@ import {
   CheckCheck,
   FilePlus2,
   Lock,
+  MessagesSquare,
   ThumbsDown,
   ThumbsUp,
   TimerOff,
@@ -37,6 +38,7 @@ const TYPE_META: Record<NotificationType, { icon: ReactNode; accent: string }> =
   [NotificationType.REQUEST_CLOSED]: { icon: <Lock size={17} />, accent: 'accent-slate' },
   [NotificationType.REQUEST_EXPIRED]: { icon: <TimerOff size={17} />, accent: 'accent-orange' },
   [NotificationType.REQUEST_EXPIRING_SOON]: { icon: <AlarmClock size={17} />, accent: 'accent-amber' },
+  [NotificationType.MESSAGE_RECEIVED]: { icon: <MessagesSquare size={17} />, accent: 'accent-purple' },
 };
 
 export default function NotificationsPage() {

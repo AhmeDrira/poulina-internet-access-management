@@ -13,36 +13,37 @@ import { LoadingBlock } from '../../components/ui/Spinner';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../../store/ToastContext';
 import { useAuth } from '../../store/AuthContext';
+import { useFormDefinitions } from '../../store/FormDefinitionsContext';
 import {
   AccessRequest,
   AccessType,
   DurationType,
+  FormFieldKind,
   RequestStatus,
   RequestType,
   ServiceEntity,
 } from '../../types';
-import {
-  FORM_FIELDS,
-  hasDurationFields,
-  hasJustification,
-} from '../../utils/formDefinitions';
+import { commitmentFields, inputFields, validateFieldValue } from '../../utils/formDefinitions';
 import {
   ACCESS_TYPE_DESCRIPTIONS,
   ACCESS_TYPE_OPTIONS,
   DURATION_OPTIONS,
-  REQUEST_TYPE_FULL_LABELS,
 } from '../../utils/labels';
 
 /**
  * Formulaire dynamique : sert à la fois à
  *  - créer une demande (/requests/new/:type)
  *  - modifier et re-soumettre une demande (/requests/:id/edit, statut « modifications demandées »)
+ *
+ * Les champs, consignes et blocs demandés proviennent de la définition du
+ * formulaire en base (gérée par le super administrateur).
  */
 export default function NewRequestPage({ editMode = false }: { editMode?: boolean }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const params = useParams<{ type?: string; id?: string }>();
+  const { get: getDefinition, loading: definitionsLoading } = useFormDefinitions();
 
   // --- Mode édition : chargement de la demande existante ---
   const existing = useApi<AccessRequest | null>(
@@ -56,10 +57,9 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   const typeIsValid =
     !!requestType && Object.values(RequestType).includes(requestType as RequestType);
 
-  const specificFields = useMemo(
-    () => (typeIsValid ? FORM_FIELDS[requestType as RequestType] : []),
-    [requestType, typeIsValid],
-  );
+  const definition = typeIsValid ? getDefinition(requestType as RequestType) : undefined;
+  const specificFields = useMemo(() => inputFields(definition), [definition]);
+  const commitments = useMemo(() => commitmentFields(definition), [definition]);
 
   const [services, setServices] = useState<ServiceEntity[]>([]);
   const [position, setPosition] = useState(user?.position ?? '');
@@ -101,7 +101,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   if (!editMode && !typeIsValid) {
     return <Navigate to="/requests/new" replace />;
   }
-  if (editMode && existing.loading) {
+  if ((editMode && existing.loading) || definitionsLoading) {
     return <LoadingBlock />;
   }
   if (editMode && (!existing.data || existing.data.status !== RequestStatus.CHANGES_REQUESTED)) {
@@ -131,6 +131,37 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
     );
   }
 
+  if (!definition) {
+    return (
+      <>
+        <PageHeader title="Nouvelle demande" />
+        <Alert variant="danger">
+          Ce formulaire est introuvable ou n'est plus disponible. Retournez au choix du formulaire.
+        </Alert>
+        <Button variant="secondary" onClick={() => navigate('/requests/new')}>
+          Choisir un formulaire
+        </Button>
+      </>
+    );
+  }
+
+  // Un formulaire retiré du catalogue reste modifiable en re-soumission,
+  // mais n'accepte plus de nouveau dépôt.
+  if (!editMode && !definition.isActive) {
+    return (
+      <>
+        <PageHeader title={definition.title} />
+        <Alert variant="warning">
+          Ce formulaire n'est plus proposé actuellement. Contactez le service informatique si vous
+          en avez besoin.
+        </Alert>
+        <Button variant="secondary" onClick={() => navigate('/requests/new')}>
+          Choisir un autre formulaire
+        </Button>
+      </>
+    );
+  }
+
   if (created) {
     return (
       <div style={{ maxWidth: 560, margin: '48px auto' }}>
@@ -155,8 +186,8 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   }
 
   const type = requestType as RequestType;
-  const withDuration = hasDurationFields(type);
-  const withJustification = hasJustification(type);
+  const withDuration = definition.requiresDuration;
+  const withJustification = definition.requiresJustification;
 
   const setField = (key: string, value: unknown) =>
     setFormData((current) => ({ ...current, [key]: value }));
@@ -174,21 +205,15 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
     if (withJustification && justification.trim().length < 10) {
       nextErrors.justification = 'La justification doit contenir au moins 10 caractères.';
     }
-    for (const field of specificFields) {
-      const value = formData[field.key];
-      if (field.kind === 'commitment') {
-        if (field.required && value !== true) {
-          nextErrors[field.key] = 'Vous devez accepter cet engagement pour soumettre la demande.';
-        }
-      } else if (field.required && !(typeof value === 'string' && value.trim())) {
-        nextErrors[field.key] = 'Ce champ est obligatoire.';
-      }
+    for (const field of definition.fields) {
+      const message = validateFieldValue(field, formData[field.key]);
+      if (message) nextErrors[field.key] = message;
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
     const payload = {
-      accessType: type === RequestType.INTERNET_ACCESS ? accessType : undefined,
+      accessType: definition.requiresAccessType ? accessType : undefined,
       durationType: withDuration ? durationType : DurationType.PERMANENT,
       durationDays:
         withDuration && durationType === DurationType.TEMPORARY ? days : undefined,
@@ -221,11 +246,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   return (
     <>
       <PageHeader
-        title={
-          editMode
-            ? `Modifier la demande ${existing.data?.reference}`
-            : REQUEST_TYPE_FULL_LABELS[type]
-        }
+        title={editMode ? `Modifier la demande ${existing.data?.reference}` : definition.title}
         subtitle={
           editMode
             ? 'Corrigez les éléments demandés puis re-soumettez au chef de département'
@@ -238,6 +259,8 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
           <strong>Modifications demandées par le chef :</strong> {existing.data.managerComment}
         </Alert>
       )}
+
+      {definition.instructions && <Alert variant="info">{definition.instructions}</Alert>}
 
       <Card title="Formulaire">
         <form onSubmit={handleSubmit} noValidate>
@@ -276,7 +299,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
               />
             </FormField>
 
-            {type === RequestType.INTERNET_ACCESS && (
+            {definition.requiresAccessType && (
               <FormField
                 label="Type d'accès demandé"
                 required
@@ -295,40 +318,58 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
               </FormField>
             )}
 
-            {/* Champs spécifiques au type de formulaire (hors engagements) */}
-            {specificFields
-              .filter((field) => field.kind !== 'commitment')
-              .map((field) => (
-                <FormField
-                  key={field.key}
-                  label={field.label}
-                  required={field.required}
-                  error={errors[field.key]}
-                >
-                  {field.kind === 'select' ? (
-                    <Select
-                      value={(formData[field.key] as string) ?? ''}
-                      onChange={(event) => setField(field.key, event.target.value)}
-                      hasError={!!errors[field.key]}
-                    >
-                      <option value="">— Choisir —</option>
-                      {field.options?.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <Input
-                      value={(formData[field.key] as string) ?? ''}
-                      onChange={(event) => setField(field.key, event.target.value)}
-                      placeholder={field.placeholder}
-                      maxLength={field.maxLength}
-                      hasError={!!errors[field.key]}
-                    />
-                  )}
-                </FormField>
-              ))}
+            {/* Champs spécifiques au formulaire (hors engagements) */}
+            {specificFields.map((field) => (
+              <FormField
+                key={field.key}
+                label={field.label}
+                required={field.required}
+                error={errors[field.key]}
+                hint={field.helpText || undefined}
+                className={field.kind === FormFieldKind.TEXTAREA ? 'full-width' : undefined}
+              >
+                {field.kind === FormFieldKind.SELECT ? (
+                  <Select
+                    value={(formData[field.key] as string) ?? ''}
+                    onChange={(event) => setField(field.key, event.target.value)}
+                    hasError={!!errors[field.key]}
+                  >
+                    <option value="">— Choisir —</option>
+                    {field.options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                ) : field.kind === FormFieldKind.TEXTAREA ? (
+                  <Textarea
+                    rows={3}
+                    value={(formData[field.key] as string) ?? ''}
+                    onChange={(event) => setField(field.key, event.target.value)}
+                    placeholder={field.placeholder || undefined}
+                    maxLength={field.maxLength ?? undefined}
+                    hasError={!!errors[field.key]}
+                  />
+                ) : (
+                  <Input
+                    type={
+                      field.kind === FormFieldKind.NUMBER
+                        ? 'number'
+                        : field.kind === FormFieldKind.DATE
+                          ? 'date'
+                          : 'text'
+                    }
+                    min={field.min ?? undefined}
+                    max={field.max ?? undefined}
+                    value={(formData[field.key] as string) ?? ''}
+                    onChange={(event) => setField(field.key, event.target.value)}
+                    placeholder={field.placeholder || undefined}
+                    maxLength={field.maxLength ?? undefined}
+                    hasError={!!errors[field.key]}
+                  />
+                )}
+              </FormField>
+            ))}
 
             {withDuration && (
               <>
@@ -379,37 +420,35 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
             )}
 
             {/* Engagements (cases à cocher obligatoires) */}
-            {specificFields
-              .filter((field) => field.kind === 'commitment')
-              .map((field) => (
-                <div key={field.key} className="full-width" style={{ marginBottom: 6 }}>
-                  <label
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      cursor: 'pointer',
-                      padding: '12px 14px',
-                      border: `1px solid ${errors[field.key] ? 'var(--red-600)' : 'var(--slate-200)'}`,
-                      borderRadius: 10,
-                      background: 'var(--slate-50)',
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData[field.key] === true}
-                      onChange={(event) => setField(field.key, event.target.checked)}
-                      style={{ marginTop: 3, width: 15, height: 15, flexShrink: 0 }}
-                    />
-                    <span>
-                      {field.label} <span style={{ color: 'var(--red-600)' }}>*</span>
-                    </span>
-                  </label>
-                  {errors[field.key] && <div className="form-error">{errors[field.key]}</div>}
-                </div>
-              ))}
+            {commitments.map((field) => (
+              <div key={field.key} className="full-width" style={{ marginBottom: 6 }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                    cursor: 'pointer',
+                    padding: '12px 14px',
+                    border: `1px solid ${errors[field.key] ? 'var(--red-600)' : 'var(--slate-200)'}`,
+                    borderRadius: 10,
+                    background: 'var(--slate-50)',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData[field.key] === true}
+                    onChange={(event) => setField(field.key, event.target.checked)}
+                    style={{ marginTop: 3, width: 15, height: 15, flexShrink: 0 }}
+                  />
+                  <span>
+                    {field.label} <span style={{ color: 'var(--red-600)' }}>*</span>
+                  </span>
+                </label>
+                {errors[field.key] && <div className="form-error">{errors[field.key]}</div>}
+              </div>
+            ))}
 
             {editMode && (
               <FormField label="Message accompagnant la re-soumission (optionnel)" className="full-width">

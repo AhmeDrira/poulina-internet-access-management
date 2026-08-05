@@ -12,6 +12,10 @@ import { AccessRequestSchema } from '../access-requests/schemas/access-request.s
 import { RequestHistorySchema } from '../access-requests/schemas/request-history.schema';
 import { NotificationSchema } from '../notifications/schemas/notification.schema';
 import { AuditLogSchema } from '../audit-logs/schemas/audit-log.schema';
+import { FormDefinitionSchema } from '../form-definitions/schemas/form-definition.schema';
+import { DEFAULT_FORM_DEFINITIONS } from '../form-definitions/form-definitions.defaults';
+import { RequestThreadSchema } from '../messaging/schemas/request-thread.schema';
+import { RequestMessageSchema } from '../messaging/schemas/request-message.schema';
 import { DecisionHelperService } from '../decision-helper/decision-helper.service';
 import {
   AccessType,
@@ -21,6 +25,7 @@ import {
   RequestStatus,
   RequestType,
   Role,
+  ThreadStatus,
 } from '../common/enums';
 
 const MONGODB_URI =
@@ -33,6 +38,9 @@ const AccessRequestModel = mongoose.model('AccessRequest', AccessRequestSchema);
 const RequestHistoryModel = mongoose.model('RequestHistory', RequestHistorySchema);
 const NotificationModel = mongoose.model('Notification', NotificationSchema);
 const AuditLogModel = mongoose.model('AuditLog', AuditLogSchema);
+const FormDefinitionModel = mongoose.model('FormDefinition', FormDefinitionSchema);
+const RequestThreadModel = mongoose.model('RequestThread', RequestThreadSchema);
+const RequestMessageModel = mongoose.model('RequestMessage', RequestMessageSchema);
 
 const decisionHelper = new DecisionHelperService();
 const hash = (password: string) => bcrypt.hashSync(password, 10);
@@ -70,7 +78,23 @@ async function seed() {
     RequestHistoryModel.deleteMany({}),
     NotificationModel.deleteMany({}),
     AuditLogModel.deleteMany({}),
+    FormDefinitionModel.deleteMany({}),
+    RequestThreadModel.deleteMany({}),
+    RequestMessageModel.deleteMany({}),
   ]);
+
+  // ------------------------------------------------------------------
+  // Formulaires (définitions modifiables par le super administrateur)
+  // ------------------------------------------------------------------
+  console.log('Création des définitions de formulaires...');
+  await FormDefinitionModel.create(
+    Object.values(DEFAULT_FORM_DEFINITIONS).map((definition) => ({
+      ...definition,
+      isActive: true,
+      version: 1,
+      updatedBy: null,
+    })),
+  );
 
   // ------------------------------------------------------------------
   // Départements et services
@@ -100,60 +124,91 @@ async function seed() {
   // Utilisateurs
   // ------------------------------------------------------------------
   console.log('Création des utilisateurs...');
-  const [admin, managerIt, managerMkt, ahmed, malek, yassine, rania, nabil, leila] =
+  // activatedAt renseigné : ces comptes de démonstration ont déjà défini leur mot de passe
+  const activated = daysAgo(60);
+  const [superAdmin, admin, managerIt, managerMkt, ahmed, malek, yassine, rania, nabil, leila] =
     await UserModel.create([
+      {
+        firstName: 'Mourad', lastName: 'Jeribi', matricule: 'PGH-0000',
+        email: 'superadmin@poulina.tn', password: hash('Super@2026'), role: Role.SUPER_ADMIN,
+        department: it._id, service: null, position: 'Responsable du système d’information',
+        activatedAt: activated,
+      },
       {
         firstName: 'Sami', lastName: 'Bouazizi', matricule: 'PGH-0001',
         email: 'admin@poulina.tn', password: hash('Admin@2026'), role: Role.ADMIN,
         department: it._id, service: srvSupport._id, position: 'Administrateur systèmes',
+        activatedAt: activated,
       },
       {
         firstName: 'Karim', lastName: 'Ben Salah', matricule: 'PGH-0002',
         email: 'manager.it@poulina.tn', password: hash('Manager@2026'), role: Role.MANAGER,
         department: it._id, service: null, position: 'Chef du département informatique',
+        activatedAt: activated,
       },
       {
         firstName: 'Sonia', lastName: 'Trabelsi', matricule: 'PGH-0003',
         email: 'manager.mkt@poulina.tn', password: hash('Manager@2026'), role: Role.MANAGER,
         department: mkt._id, service: null, position: 'Chef du département marketing',
+        activatedAt: activated,
       },
       {
         firstName: 'Ahmed Amine', lastName: 'Drira', matricule: 'PGH-0010',
         email: 'employee@poulina.tn', password: hash('Employee@2026'), role: Role.EMPLOYEE,
         department: it._id, service: srvDev._id, position: 'Développeur stagiaire',
+        activatedAt: activated,
       },
       {
         firstName: 'Malek', lastName: 'Rahmouni', matricule: 'PGH-0011',
         email: 'malek.rahmouni@poulina.tn', password: hash('Employee@2026'), role: Role.EMPLOYEE,
         department: mkt._id, service: srvCom._id, position: 'Chargé de communication',
+        activatedAt: activated,
       },
       {
         firstName: 'Yassine', lastName: 'Jlassi', matricule: 'PGH-0012',
         email: 'yassine.jlassi@poulina.tn', password: hash('Employee@2026'), role: Role.EMPLOYEE,
         department: fin._id, service: srvCompta._id, position: 'Comptable',
+        activatedAt: activated,
       },
       {
         firstName: 'Rania', lastName: 'Khelifi', matricule: 'PGH-0013',
         email: 'rania.khelifi@poulina.tn', password: hash('Employee@2026'), role: Role.EMPLOYEE,
         department: rh._id, service: srvRecrut._id, position: 'Chargée de recrutement',
+        activatedAt: activated,
       },
       {
         firstName: 'Nabil', lastName: 'Gharbi', matricule: 'PGH-0020',
         email: 'network@poulina.tn', password: hash('Network@2026'), role: Role.NETWORK_TEAM,
         department: it._id, service: srvReseau._id, position: 'Ingénieur réseau',
+        activatedAt: activated,
       },
       {
         firstName: 'Leila', lastName: 'Mansour', matricule: 'PGH-0030',
         email: 'security@poulina.tn', password: hash('Security@2026'), role: Role.SECURITY_OFFICER,
         department: it._id, service: null, position: 'Responsable sécurité SI',
+        activatedAt: activated,
       },
     ]);
+
+  // Compte créé par l'administrateur mais jamais activé : illustre le scénario
+  // d'arrivée d'un nouvel employé (lien d'activation en attente d'utilisation).
+  const pendingEmployee = await UserModel.create({
+    firstName: 'Nour', lastName: 'Belhadj', matricule: 'PGH-0014',
+    email: 'nour.belhadj@poulina.tn', password: null, role: Role.EMPLOYEE,
+    department: prod._id, service: srvLogistique._id, position: 'Assistante logistique',
+    activatedAt: null,
+    invitedBy: admin._id,
+    activationSentAt: daysAgo(1),
+    // Aucun hash de lien : l'administrateur doit en générer un nouveau depuis l'interface
+    activationTokenHash: null,
+    activationExpiresAt: null,
+  });
+  await backdate(UserModel, pendingEmployee._id, daysAgo(1));
 
   it.manager = managerIt._id;
   await it.save();
   mkt.manager = managerMkt._id;
   await mkt.save();
-  void srvLogistique;
   void leila;
 
   // ------------------------------------------------------------------
@@ -562,6 +617,67 @@ async function seed() {
   ]);
 
   // ------------------------------------------------------------------
+  // Messagerie interne (chef de département ↔ équipe réseau)
+  // ------------------------------------------------------------------
+  console.log('Création des échanges internes...');
+  // Fil sur R5 (demande de Malek, département Marketing, validée par Sonia) :
+  // Sonia (chef MKT) et Nabil (équipe réseau) sont les deux seuls à y avoir accès.
+  const thread = await RequestThreadModel.create({
+    request: r5._id,
+    reference: r5.reference,
+    requestType: r5.requestType,
+    department: mkt._id,
+    requesterName: `${malek.firstName} ${malek.lastName}`,
+    status: ThreadStatus.OPEN,
+    createdBy: nabil._id,
+    messageCount: 3,
+  });
+
+  const threadMessages: {
+    author: any;
+    role: Role;
+    body: string;
+    readBy: any[];
+    date: Date;
+  }[] = [
+    {
+      author: nabil, role: Role.NETWORK_TEAM,
+      body: 'Bonjour, avant d’ouvrir l’accès pour Malek Rahmouni : confirmez-vous que le profil de filtrage « Marketing » (réseaux sociaux autorisés) suffit, ou faut-il également les plateformes publicitaires ?',
+      readBy: [nabil, managerMkt], date: daysAgo(4, 10),
+    },
+    {
+      author: managerMkt, role: Role.MANAGER,
+      body: 'Bonjour Nabil, le profil Marketing suffit pour l’instant. Les plateformes publicitaires feront l’objet d’une demande séparée en septembre.',
+      readBy: [managerMkt, nabil], date: daysAgo(4, 11),
+    },
+    {
+      author: nabil, role: Role.NETWORK_TEAM,
+      body: 'Parfait, je pars sur le profil Marketing. Activation prévue demain matin, je vous confirme dès que c’est en place.',
+      readBy: [nabil], date: daysAgo(3, 16),
+    },
+  ];
+
+  for (const message of threadMessages) {
+    const created = await RequestMessageModel.create({
+      thread: thread._id,
+      request: r5._id,
+      department: mkt._id,
+      author: message.author._id,
+      authorRole: message.role,
+      body: message.body,
+      readBy: message.readBy.map((user: any) => user._id),
+    });
+    await backdate(RequestMessageModel, created._id, message.date);
+  }
+
+  const lastMessage = threadMessages[threadMessages.length - 1];
+  thread.lastMessageAt = lastMessage.date;
+  thread.lastMessagePreview = lastMessage.body.slice(0, 140);
+  thread.lastMessageBy = nabil._id;
+  await thread.save();
+  await backdate(RequestThreadModel, thread._id, daysAgo(4, 10));
+
+  // ------------------------------------------------------------------
   // Notifications
   // ------------------------------------------------------------------
   console.log('Création des notifications...');
@@ -593,8 +709,12 @@ async function seed() {
   // ------------------------------------------------------------------
   console.log("Création du journal d'audit...");
   const auditEntries = [
+    { user: superAdmin._id, userEmail: superAdmin.email, action: AuditAction.USER_INVITED, ipAddress: '10.20.1.2', details: { cible: admin.email, role: Role.ADMIN }, date: daysAgo(60) },
     { user: admin._id, userEmail: admin.email, action: AuditAction.USER_CREATED, ipAddress: '10.20.1.5', details: { cible: ahmed.email, role: Role.EMPLOYEE }, date: daysAgo(50) },
     { user: admin._id, userEmail: admin.email, action: AuditAction.USER_CREATED, ipAddress: '10.20.1.5', details: { cible: nabil.email, role: Role.NETWORK_TEAM }, date: daysAgo(50, 10) },
+    { user: admin._id, userEmail: admin.email, action: AuditAction.USER_INVITED, ipAddress: '10.20.1.5', details: { cible: pendingEmployee.email, role: Role.EMPLOYEE }, date: daysAgo(1) },
+    { user: superAdmin._id, userEmail: superAdmin.email, action: AuditAction.FORM_UPDATED, ipAddress: '10.20.1.2', details: { formulaire: RequestType.NETWORK_SHARE, version: 1 }, date: daysAgo(30) },
+    { user: nabil._id, userEmail: nabil.email, action: AuditAction.MESSAGE_SENT, ipAddress: '10.20.1.40', details: { reference: r5.reference, taille: 168 }, date: daysAgo(4, 10) },
     { user: ahmed._id, userEmail: ahmed.email, action: AuditAction.LOGIN_SUCCESS, ipAddress: '10.20.4.32', details: {}, date: daysAgo(2, 8) },
     { user: ahmed._id, userEmail: ahmed.email, action: AuditAction.REQUEST_CREATED, ipAddress: '10.20.4.32', details: { reference: r1.reference, typeFormulaire: RequestType.INTERNET_ACCESS }, date: daysAgo(2) },
     { user: managerIt._id, userEmail: managerIt.email, action: AuditAction.LOGIN_SUCCESS, ipAddress: '10.20.2.11', details: {}, date: daysAgo(19, 8) },
@@ -626,8 +746,11 @@ async function seed() {
     utilisateurs: await UserModel.countDocuments(),
     departements: await DepartmentModel.countDocuments(),
     services: await ServiceModel.countDocuments(),
+    formulaires: await FormDefinitionModel.countDocuments(),
     demandes: await AccessRequestModel.countDocuments(),
     historique: await RequestHistoryModel.countDocuments(),
+    filsDiscussion: await RequestThreadModel.countDocuments(),
+    messages: await RequestMessageModel.countDocuments(),
     notifications: await NotificationModel.countDocuments(),
     auditLogs: await AuditLogModel.countDocuments(),
   };
@@ -636,6 +759,7 @@ async function seed() {
   console.table(counts);
   console.log('Comptes de démonstration :');
   console.table([
+    { Role: 'Super administrateur', Email: 'superadmin@poulina.tn', MotDePasse: 'Super@2026' },
     { Role: 'Administrateur', Email: 'admin@poulina.tn', MotDePasse: 'Admin@2026' },
     { Role: 'Chef département IT', Email: 'manager.it@poulina.tn', MotDePasse: 'Manager@2026' },
     { Role: 'Chef département MKT', Email: 'manager.mkt@poulina.tn', MotDePasse: 'Manager@2026' },
@@ -644,6 +768,10 @@ async function seed() {
     { Role: 'Équipe réseau', Email: 'network@poulina.tn', MotDePasse: 'Network@2026' },
     { Role: 'Responsable sécurité', Email: 'security@poulina.tn', MotDePasse: 'Security@2026' },
   ]);
+  console.log(
+    `Compte en attente d'activation : ${pendingEmployee.email} — générez son lien depuis ` +
+      'Utilisateurs → « Lien d’accès » (scénario d’arrivée d’un nouvel employé).',
+  );
 }
 
 seed()
