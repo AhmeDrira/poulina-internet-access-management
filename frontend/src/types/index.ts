@@ -48,6 +48,11 @@ export enum RequestType {
   PASSWORD_COMMITMENT = 'PASSWORD_COMMITMENT',
 }
 
+export enum RequestKind {
+  NEW = 'NEW',
+  RENEWAL = 'RENEWAL',
+}
+
 export enum AccessType {
   FULL = 'FULL',
   STANDARD = 'STANDARD',
@@ -181,6 +186,7 @@ export interface AccessRequest {
   _id: string;
   reference: string;
   requestType: RequestType;
+  requestKind: RequestKind;
   requester: UserRef;
   firstName: string;
   lastName: string;
@@ -194,6 +200,10 @@ export interface AccessRequest {
   durationDays: number | null;
   justification: string;
   formData: Record<string, unknown>;
+  acknowledgementAccepted: boolean;
+  acknowledgedAt: string | null;
+  applicantSignature: string;
+  applicantSignedAt: string | null;
   status: RequestStatus;
   managerDecisionBy: UserRef | null;
   managerDecisionAt: string | null;

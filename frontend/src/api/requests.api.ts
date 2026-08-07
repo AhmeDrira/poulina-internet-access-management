@@ -4,6 +4,7 @@ import {
   AccessType,
   DurationType,
   Paginated,
+  RequestKind,
   RequestHistoryEntry,
   RequestStatus,
   RequestType,
@@ -11,11 +12,14 @@ import {
 
 export interface CreateRequestPayload {
   requestType: RequestType;
+  requestKind: RequestKind;
   accessType?: AccessType;
   durationType: DurationType;
   durationDays?: number;
   justification?: string;
   formData?: Record<string, unknown>;
+  acknowledgementAccepted: boolean;
+  applicantSignature?: string;
   position?: string;
   serviceId?: string;
 }

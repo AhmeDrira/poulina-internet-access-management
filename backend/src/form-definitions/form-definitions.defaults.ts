@@ -61,7 +61,15 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
     requiresJustification: true,
     defaultJustification: '',
     // Le niveau d'accès (complet / standard / restreint) est porté par le champ accessType
-    fields: [],
+    fields: [
+      {
+        key: 'commitmentAccepted',
+        label:
+          "L'accès à Internet est destiné uniquement à des utilisations professionnelles en relation directe avec la nature des fonctions du demandeur. Le mot de passe ne doit pas être communiqué à d'autres personnes. Il est strictement interdit de télécharger des utilitaires, programmes ou fichiers non professionnels. Je déclare avoir pris connaissance que tout abus lors de mes accès à internet entraînera la suspension immédiate et automatique de ma connexion.",
+        kind: FormFieldKind.COMMITMENT,
+        required: true,
+      },
+    ],
   },
 
   [RequestType.REMOTE_ACCESS]: {
@@ -115,6 +123,13 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
         maxLength: 100,
         placeholder: 'Ex : PC-IT-042',
       },
+      {
+        key: 'commitmentAccepted',
+        label:
+          "L'accès distant est destiné uniquement à des utilisations professionnelles en relation directe avec la nature des fonctions du demandeur. Les mots de passe ne doivent pas être communiqués à d'autres personnes. En cas de perte du TOKEN l'utilisateur devra prendre en charge son renouvellement. Je m'engage à respecter les procédures et règles de sécurité informatique en vigueur.",
+        kind: FormFieldKind.COMMITMENT,
+        required: true,
+      },
     ],
   },
 
@@ -162,7 +177,7 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
       {
         key: 'commitmentAccepted',
         label:
-          'Je m’engage à un usage strictement professionnel du périphérique, à effectuer une analyse antivirus systématique et à ne procéder à aucune extraction de données confidentielles.',
+          "Par conséquent, je m'engage à ne pas utiliser ce lecteur externe pour d'autres besoins non cités ci-dessus, qu'ils soient professionnels ou personnels ; à interdire l'utilisation de mon lecteur externe par tout autre utilisateur ; et à informer le responsable informatique de la filiale en cas d'achèvement des travaux cause de cette autorisation.",
         kind: FormFieldKind.COMMITMENT,
         required: true,
       },
@@ -196,7 +211,9 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
         required: true,
         options: [
           { value: 'READ_ONLY', label: 'Lecture seule' },
+          { value: 'WRITE_ONLY', label: 'Ecriture seule' },
           { value: 'READ_WRITE', label: 'Lecture et écriture' },
+          { value: 'FULL_CONTROL', label: 'Contrôle total' },
         ],
       },
       {
@@ -206,6 +223,12 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
         required: false,
         maxLength: 120,
         placeholder: 'Ex : Ressources Humaines',
+      },
+      {
+        key: 'commitmentAccepted',
+        label: 'NB : Le dossier de partage ne contient que des données professionnelles.',
+        kind: FormFieldKind.COMMITMENT,
+        required: true,
       },
     ],
   },
@@ -249,6 +272,13 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
         maxLength: 200,
         placeholder: 'Ex : salons professionnels, visites des filiales...',
       },
+      {
+        key: 'commitmentAccepted',
+        label:
+          "L'accès à Internet est destiné uniquement à des utilisations professionnelles en relation directe avec la nature des fonctions du demandeur. Le mot de passe ne doit pas être communiqué à d'autres personnes. Il est strictement interdit de télécharger des utilitaires, programmes ou fichiers non professionnels. Je déclare avoir pris connaissance que tout abus lors de mes accès à internet entraînera la suspension immédiate et automatique de ma connexion.",
+        kind: FormFieldKind.COMMITMENT,
+        required: true,
+      },
     ],
   },
 
@@ -277,7 +307,7 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
       {
         key: 'commitmentAccepted',
         label:
-          'Je m’engage à garder mon mot de passe strictement confidentiel, à ne jamais le communiquer (y compris au service informatique), à le changer périodiquement et à signaler immédiatement toute compromission.',
+          "Je m'engage à agir de manière à être la seule personne à connaître mon mot de passe ; à n'utiliser ce mot de passe que pour réaliser les tâches demandées ; à informer la direction et/ou le responsable informatique en cas de violation de mon mot de passe pour le changer ; et à assumer toute responsabilité due à une fausse manipulation de mon mot de passe.",
         kind: FormFieldKind.COMMITMENT,
         required: true,
       },
@@ -292,9 +322,14 @@ export const DEFAULT_FORM_DEFINITIONS: Record<RequestType, DefaultFormDefinition
  */
 export const RESERVED_FIELD_KEYS = [
   'accessType',
+  'requestKind',
   'durationType',
   'durationDays',
   'justification',
+  'acknowledgementAccepted',
+  'acknowledgedAt',
+  'applicantSignature',
+  'applicantSignedAt',
   'position',
   'serviceId',
   'service',

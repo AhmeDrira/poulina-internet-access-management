@@ -4,6 +4,7 @@ import {
   AccessType,
   DurationType,
   RecommendationLevel,
+  RequestKind,
   RequestStatus,
   RequestType,
 } from '../../common/enums';
@@ -42,6 +43,10 @@ export class AccessRequest {
     index: true,
   })
   requestType: RequestType;
+
+  /** Nouvelle demande ou renouvellement */
+  @Prop({ type: String, enum: RequestKind, required: true, default: RequestKind.NEW })
+  requestKind: RequestKind;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   requester: Types.ObjectId;
@@ -86,6 +91,20 @@ export class AccessRequest {
 
   @Prop({ required: true, trim: true })
   justification: string;
+
+  /** Acceptation explicite de la mention "Lu et approuve" */
+  @Prop({ default: false })
+  acknowledgementAccepted: boolean;
+
+  @Prop({ type: Date, default: null })
+  acknowledgedAt: Date | null;
+
+  /** Signature numerique du demandeur au format data URL PNG, si fournie */
+  @Prop({ default: '' })
+  applicantSignature: string;
+
+  @Prop({ type: Date, default: null })
+  applicantSignedAt: Date | null;
 
   @Prop({
     type: String,

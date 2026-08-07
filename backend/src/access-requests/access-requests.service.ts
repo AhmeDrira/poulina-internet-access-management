@@ -16,6 +16,7 @@ import {
   NETWORK_QUEUE_STATUSES,
   NotificationType,
   REQUEST_TYPE_PREFIXES,
+  RequestKind,
   RequestStatus,
   RequestType,
   Role,
@@ -99,6 +100,8 @@ export class AccessRequestsService {
     // Un formulaire retiré du catalogue par le super administrateur n'accepte plus de dépôt
     await this.formDefinitions.assertUsable(dto.requestType);
 
+    this.assertAcknowledged(dto.acknowledgementAccepted);
+    const applicantSignature = this.normalizeSignature(dto.applicantSignature);
     const content = await this.validateRequestContent(dto.requestType, dto);
     const serviceId = await this.resolveService(dto.serviceId, requester, department);
 
@@ -120,6 +123,7 @@ export class AccessRequestsService {
 
     const payload = {
       requestType: dto.requestType,
+      requestKind: dto.requestKind ?? RequestKind.NEW,
       requester: requester._id,
       firstName: requester.firstName,
       lastName: requester.lastName,
@@ -133,6 +137,10 @@ export class AccessRequestsService {
       durationDays: content.durationDays,
       justification: content.justification,
       formData: content.formData,
+      acknowledgementAccepted: true,
+      acknowledgedAt: new Date(),
+      applicantSignature,
+      applicantSignedAt: applicantSignature ? new Date() : null,
       status: RequestStatus.PENDING_MANAGER,
       decisionSupport,
     };
@@ -210,6 +218,12 @@ export class AccessRequestsService {
       );
     }
 
+    this.assertAcknowledged(dto.acknowledgementAccepted);
+    const applicantSignature =
+      dto.applicantSignature !== undefined
+        ? this.normalizeSignature(dto.applicantSignature)
+        : request.applicantSignature || '';
+
     const content = await this.validateRequestContent(request.requestType, {
       accessType: dto.accessType ?? request.accessType ?? undefined,
       durationType: dto.durationType ?? request.durationType,
@@ -238,6 +252,15 @@ export class AccessRequestsService {
     request.durationDays = content.durationDays;
     request.justification = content.justification;
     request.formData = content.formData;
+    request.requestKind = dto.requestKind ?? request.requestKind ?? RequestKind.NEW;
+    request.acknowledgementAccepted = true;
+    request.acknowledgedAt = new Date();
+    request.applicantSignature = applicantSignature;
+    request.applicantSignedAt = applicantSignature
+      ? dto.applicantSignature !== undefined
+        ? new Date()
+        : request.applicantSignedAt
+      : null;
     request.markModified('formData'); // champ Mixed : forcer la détection du changement
     if (dto.position?.trim()) {
       request.position = dto.position.trim();
@@ -800,6 +823,28 @@ export class AccessRequestsService {
    * Valide la cohérence du contenu selon le type de formulaire :
    * accessType, durée, justification et champs spécifiques (formData).
    */
+  private assertAcknowledged(value?: boolean): void {
+    if (value !== true) {
+      throw new BadRequestException(
+        'Vous devez cocher la mention Lu et approuvé avant de soumettre la demande.',
+      );
+    }
+  }
+
+  private normalizeSignature(value?: string | null): string {
+    const signature = value?.trim() ?? '';
+    if (!signature) {
+      return '';
+    }
+    if (
+      signature.length > 300000 ||
+      !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature)
+    ) {
+      throw new BadRequestException('La signature numérique doit être une image PNG valide.');
+    }
+    return signature;
+  }
+
   private async validateRequestContent(
     requestType: RequestType,
     input: {

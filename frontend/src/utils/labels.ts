@@ -4,6 +4,7 @@ import {
   DurationType,
   FormFieldKind,
   RecommendationLevel,
+  RequestKind,
   RequestStatus,
   RequestType,
   Role,
@@ -91,6 +92,16 @@ export const REQUEST_TYPE_COLORS: Record<RequestType, BadgeColor> = {
   [RequestType.USB_3G_KEY]: 'green',
   [RequestType.PASSWORD_COMMITMENT]: 'slate',
 };
+
+export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
+  [RequestKind.NEW]: 'Nouvelle demande',
+  [RequestKind.RENEWAL]: 'Renouvellement de la demande',
+};
+
+export const REQUEST_KIND_OPTIONS = Object.values(RequestKind).map((value) => ({
+  value,
+  label: REQUEST_KIND_LABELS[value],
+}));
 
 // ---------- Rôles ----------
 

@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
-import { AccessType, DurationType, RequestStatus } from '../common/enums';
+import {
+  AccessType,
+  DurationType,
+  REQUEST_KIND_LABELS,
+  RequestKind,
+  RequestStatus,
+} from '../common/enums';
 import {
   DescribedFormData,
   FormDefinitionsService,
@@ -83,7 +89,8 @@ export class RequestPdfService {
     this.drawContentSection(doc, request, form);
     this.drawManagerSection(doc, request);
     this.drawNetworkSection(doc, request);
-    this.drawSignatures(doc);
+    this.drawAcknowledgement(doc, request);
+    this.drawSignatures(doc, request);
     this.drawFooter(doc, request);
 
     doc.end();
@@ -225,7 +232,12 @@ export class RequestPdfService {
   ): void {
     this.sectionTitle(doc, '2. Contenu de la demande');
 
-    const pairs: [string, string][] = [];
+    const pairs: [string, string][] = [
+      [
+        'Nature de la demande',
+        REQUEST_KIND_LABELS[request.requestKind ?? RequestKind.NEW] ?? 'Nouvelle demande',
+      ],
+    ];
     if (request.accessType) {
       pairs.push(["Type d'accès Internet", ACCESS_TYPE_LABELS[request.accessType]]);
     }
@@ -300,21 +312,74 @@ export class RequestPdfService {
     ]);
   }
 
-  private drawSignatures(doc: PDFKit.PDFDocument): void {
+  private drawAcknowledgement(
+    doc: PDFKit.PDFDocument,
+    request: AccessRequestDocument,
+  ): void {
+    if (doc.y > 675) doc.addPage();
+    doc.moveDown(0.7);
+    const y = doc.y;
+    doc.rect(48, y, 10, 10).lineWidth(0.9).strokeColor(INK).stroke();
+    if (request.acknowledgementAccepted) {
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text('X', 50.5, y + 1);
+    }
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9.5)
+      .fillColor(INK)
+      .text('Lu et approuvé', 64, y - 1, { width: 180 });
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor(MUTED)
+      .text(`Date : ${formatDateTime(request.acknowledgedAt)}`, 250, y - 1, {
+        width: 297,
+        align: 'right',
+      });
+    doc.y = y + 22;
+    doc.x = 48;
+  }
+
+  private drawSignatures(
+    doc: PDFKit.PDFDocument,
+    request: AccessRequestDocument,
+  ): void {
     if (doc.y > 640) doc.addPage();
     doc.moveDown(1);
     const y = doc.y;
-    const labels = ['Le demandeur', 'Le chef de département', 'L’équipe réseau / sécurité'];
+    const labels = ['Le demandeur', 'Le chef de département', "L'équipe réseau / sécurité"];
+    const signature = this.signatureImageBuffer(request.applicantSignature);
     labels.forEach((label, index) => {
       const x = 48 + index * 170;
       doc.rect(x, y, 158, 64).lineWidth(0.7).strokeColor(LINE).stroke();
       doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(label, x + 8, y + 6);
-      doc
-        .fontSize(7.5)
-        .text('Signature :', x + 8, y + 48);
+      if (index === 0 && signature) {
+        try {
+          doc.image(signature, x + 12, y + 20, {
+            fit: [134, 24],
+            align: 'center',
+            valign: 'center',
+          });
+          doc
+            .font('Helvetica')
+            .fontSize(6.8)
+            .fillColor(MUTED)
+            .text('Signature numérique', x + 8, y + 48, { width: 142 });
+          return;
+        } catch {
+          // Une signature invalide ne doit pas bloquer l'export PDF.
+        }
+      }
+      doc.fontSize(7.5).text('Signature :', x + 8, y + 48);
     });
     doc.y = y + 76;
     doc.x = 48;
+  }
+
+  private signatureImageBuffer(value?: string | null): Buffer | null {
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(value ?? '');
+    if (!match) return null;
+    return Buffer.from(match[1], 'base64');
   }
 
   private drawFooter(doc: PDFKit.PDFDocument, request: AccessRequestDocument): void {

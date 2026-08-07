@@ -22,6 +22,7 @@ import {
   AuditAction,
   DurationType,
   NotificationType,
+  RequestKind,
   RequestStatus,
   RequestType,
   Role,
@@ -230,6 +231,7 @@ async function seed() {
   }) => ({
     reference: spec.reference,
     requestType: spec.requestType,
+    requestKind: RequestKind.NEW,
     requester: spec.requester._id,
     firstName: spec.requester.firstName,
     lastName: spec.requester.lastName,
@@ -243,6 +245,10 @@ async function seed() {
     durationDays: spec.durationDays,
     justification: spec.justification,
     formData: spec.formData ?? {},
+    acknowledgementAccepted: true,
+    acknowledgedAt: new Date(),
+    applicantSignature: '',
+    applicantSignedAt: null,
     decisionSupport: decisionHelper.evaluate({
       requestType: spec.requestType,
       justification: spec.justification,

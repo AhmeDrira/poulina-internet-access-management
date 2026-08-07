@@ -675,6 +675,46 @@ a:hover {
   grid-column: 1 / -1;
 }
 
+.signature-section {
+  margin-bottom: 16px;
+}
+
+.signature-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.signature-pad-wrap {
+  position: relative;
+  border: 1px dashed var(--slate-300);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  overflow: hidden;
+}
+
+.signature-pad {
+  display: block;
+  width: 100%;
+  height: 170px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signature-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--slate-400);
+  font-size: 13px;
+  pointer-events: none;
+}
+
 /* ---------- Tableaux ---------- */
 
 .table-wrapper {
@@ -1230,6 +1270,25 @@ a:hover {
   font-size: 13.5px;
   color: var(--slate-700);
   white-space: pre-wrap;
+}
+
+.request-signature-preview {
+  margin-top: 10px;
+  width: min(340px, 100%);
+  min-height: 84px;
+  border: 1px dashed var(--slate-300);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.request-signature-preview img {
+  max-width: 100%;
+  max-height: 100px;
+  object-fit: contain;
 }
 
 /* ---------- Aide à la décision ---------- */

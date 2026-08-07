@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Eraser, PenLine } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
 import { requestsApi } from '../../api/requests.api';
 import { servicesApi } from '../../api/services.api';
@@ -19,6 +19,7 @@ import {
   AccessType,
   DurationType,
   FormFieldKind,
+  RequestKind,
   RequestStatus,
   RequestType,
   ServiceEntity,
@@ -28,6 +29,7 @@ import {
   ACCESS_TYPE_DESCRIPTIONS,
   ACCESS_TYPE_OPTIONS,
   DURATION_OPTIONS,
+  REQUEST_KIND_OPTIONS,
 } from '../../utils/labels';
 
 /**
@@ -60,8 +62,12 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   const definition = typeIsValid ? getDefinition(requestType as RequestType) : undefined;
   const specificFields = useMemo(() => inputFields(definition), [definition]);
   const commitments = useMemo(() => commitmentFields(definition), [definition]);
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingSignatureRef = useRef(false);
+  const lastSignaturePointRef = useRef<{ x: number; y: number } | null>(null);
 
   const [services, setServices] = useState<ServiceEntity[]>([]);
+  const [requestKind, setRequestKind] = useState<RequestKind>(RequestKind.NEW);
   const [position, setPosition] = useState(user?.position ?? '');
   const [serviceId, setServiceId] = useState(user?.service?._id ?? '');
   const [accessType, setAccessType] = useState<AccessType>(AccessType.STANDARD);
@@ -69,6 +75,8 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   const [durationDays, setDurationDays] = useState('90');
   const [justification, setJustification] = useState('');
   const [formData, setFormData] = useState<Record<string, unknown>>({});
+  const [acknowledgementAccepted, setAcknowledgementAccepted] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState('');
   const [resubmitComment, setResubmitComment] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +86,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   useEffect(() => {
     const request = existing.data;
     if (!editMode || !request) return;
+    setRequestKind(request.requestKind ?? RequestKind.NEW);
     setPosition(request.position ?? '');
     setServiceId(request.service?._id ?? '');
     setAccessType(request.accessType ?? AccessType.STANDARD);
@@ -85,6 +94,8 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
     setDurationDays(request.durationDays ? String(request.durationDays) : '90');
     setJustification(request.justification ?? '');
     setFormData(request.formData ?? {});
+    setAcknowledgementAccepted(request.acknowledgementAccepted ?? false);
+    setSignatureDataUrl(request.applicantSignature ?? '');
   }, [editMode, existing.data?._id]);
 
   useEffect(() => {
@@ -94,6 +105,46 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
       .then(setServices)
       .catch(() => setServices([]));
   }, [user?.department?._id]);
+
+  const setField = (key: string, value: unknown) =>
+    setFormData((current) => ({ ...current, [key]: value }));
+
+  const signaturePoint = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) * canvas.width) / rect.width,
+      y: ((event.clientY - rect.top) * canvas.height) / rect.height,
+    };
+  };
+
+  const clearSignatureCanvas = () => {
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  useEffect(() => {
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#0f172a';
+    context.fillStyle = '#0f172a';
+    context.lineWidth = 3;
+    clearSignatureCanvas();
+    if (!signatureDataUrl) return;
+
+    const image = new Image();
+    image.onload = () => {
+      clearSignatureCanvas();
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+    image.src = signatureDataUrl;
+  }, [signatureDataUrl]);
 
   if (!user) return null;
 
@@ -189,8 +240,54 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
   const withDuration = definition.requiresDuration;
   const withJustification = definition.requiresJustification;
 
-  const setField = (key: string, value: unknown) =>
-    setFormData((current) => ({ ...current, [key]: value }));
+  const beginSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext('2d');
+    const point = signaturePoint(event);
+    if (!canvas || !context || !point) return;
+    event.preventDefault();
+    if (signatureDataUrl) {
+      setSignatureDataUrl('');
+      clearSignatureCanvas();
+    }
+    canvas.setPointerCapture(event.pointerId);
+    drawingSignatureRef.current = true;
+    lastSignaturePointRef.current = point;
+    context.beginPath();
+    context.arc(point.x, point.y, 1.5, 0, Math.PI * 2);
+    context.fill();
+  };
+
+  const drawSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingSignatureRef.current) return;
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext('2d');
+    const point = signaturePoint(event);
+    const previous = lastSignaturePointRef.current;
+    if (!context || !point || !previous) return;
+    event.preventDefault();
+    context.beginPath();
+    context.moveTo(previous.x, previous.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    lastSignaturePointRef.current = point;
+  };
+
+  const endSignature = (event: PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas || !drawingSignatureRef.current) return;
+    event.preventDefault();
+    drawingSignatureRef.current = false;
+    lastSignaturePointRef.current = null;
+    setSignatureDataUrl(canvas.toDataURL('image/png'));
+  };
+
+  const resetSignature = () => {
+    drawingSignatureRef.current = false;
+    lastSignaturePointRef.current = null;
+    setSignatureDataUrl('');
+    clearSignatureCanvas();
+  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -209,16 +306,23 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
       const message = validateFieldValue(field, formData[field.key]);
       if (message) nextErrors[field.key] = message;
     }
+    if (!acknowledgementAccepted) {
+      nextErrors.acknowledgementAccepted =
+        'Vous devez cocher Lu et approuvé avant de soumettre la demande.';
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
     const payload = {
+      requestKind,
       accessType: definition.requiresAccessType ? accessType : undefined,
       durationType: withDuration ? durationType : DurationType.PERMANENT,
       durationDays:
         withDuration && durationType === DurationType.TEMPORARY ? days : undefined,
       justification: withJustification ? justification.trim() : undefined,
       formData,
+      acknowledgementAccepted,
+      applicantSignature: signatureDataUrl || undefined,
       position: position.trim() || undefined,
       serviceId: serviceId || undefined,
     };
@@ -297,6 +401,19 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
                 placeholder="Ex : Développeur, Comptable..."
                 maxLength={120}
               />
+            </FormField>
+
+            <FormField label="Nature de la demande" required>
+              <Select
+                value={requestKind}
+                onChange={(event) => setRequestKind(event.target.value as RequestKind)}
+              >
+                {REQUEST_KIND_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
             </FormField>
 
             {definition.requiresAccessType && (
@@ -449,6 +566,77 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
                 {errors[field.key] && <div className="form-error">{errors[field.key]}</div>}
               </div>
             ))}
+
+            <div className="full-width signature-section">
+              <div className="signature-section-header">
+                <div>
+                  <div className="form-label">Signature numérique du demandeur</div>
+                  <div className="form-hint">
+                    Facultative : laissez vide si vous préférez exporter le PDF et signer
+                    manuellement.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  icon={<Eraser size={14} />}
+                  onClick={resetSignature}
+                  disabled={!signatureDataUrl}
+                >
+                  Effacer
+                </Button>
+              </div>
+              <div className="signature-pad-wrap">
+                <canvas
+                  ref={signatureCanvasRef}
+                  width={720}
+                  height={170}
+                  className="signature-pad"
+                  onPointerDown={beginSignature}
+                  onPointerMove={drawSignature}
+                  onPointerUp={endSignature}
+                  onPointerCancel={endSignature}
+                  aria-label="Zone de signature numérique"
+                />
+                {!signatureDataUrl && (
+                  <div className="signature-placeholder">
+                    <PenLine size={18} />
+                    <span>Signez ici avec la souris ou le tactile</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="full-width" style={{ marginBottom: 6 }}>
+              <label
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'flex-start',
+                  cursor: 'pointer',
+                  padding: '12px 14px',
+                  border: `1px solid ${errors.acknowledgementAccepted ? 'var(--red-600)' : 'var(--slate-200)'}`,
+                  borderRadius: 10,
+                  background: 'var(--slate-50)',
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={acknowledgementAccepted}
+                  onChange={(event) => setAcknowledgementAccepted(event.target.checked)}
+                  style={{ marginTop: 3, width: 15, height: 15, flexShrink: 0 }}
+                />
+                <span>
+                  Lu et approuvé <span style={{ color: 'var(--red-600)' }}>*</span>
+                </span>
+              </label>
+              {errors.acknowledgementAccepted && (
+                <div className="form-error">{errors.acknowledgementAccepted}</div>
+              )}
+            </div>
 
             {editMode && (
               <FormField label="Message accompagnant la re-soumission (optionnel)" className="full-width">

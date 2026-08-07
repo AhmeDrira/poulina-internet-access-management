@@ -29,6 +29,7 @@ import {
   DURATION_LABELS,
   fullName,
   RECOMMENDATION_LABELS,
+  REQUEST_KIND_LABELS,
 } from '../../utils/labels';
 
 /** Statuts à partir desquels le chef de département et l'équipe réseau échangent */
@@ -175,6 +176,10 @@ export default function RequestDetailsPage() {
           <Card title="Informations de la demande">
             <div className="detail-grid" style={{ marginBottom: 18 }}>
               <DetailItem label="Type de formulaire" value={titleOf(request.requestType)} />
+              <DetailItem
+                label="Nature de la demande"
+                value={REQUEST_KIND_LABELS[request.requestKind] ?? 'Nouvelle demande'}
+              />
               <DetailItem label="Demandeur" value={`${request.firstName} ${request.lastName}`} />
               <DetailItem label="Matricule" value={<span className="font-mono">{request.matricule}</span>} />
               <DetailItem label="Email" value={request.email} />
@@ -220,6 +225,18 @@ export default function RequestDetailsPage() {
                 ))}
               </div>
             )}
+            <div style={{ marginBottom: 18 }}>
+              <div className="detail-item-label">Lu et approuvé</div>
+              <div className="text-small" style={{ color: request.acknowledgementAccepted ? 'var(--green-600)' : 'var(--red-600)' }}>
+                {request.acknowledgementAccepted ? 'Accepté' : 'Non confirmé'}
+                {request.acknowledgedAt ? ` le ${formatDateTime(request.acknowledgedAt)}` : ''}
+              </div>
+              {request.applicantSignature && (
+                <div className="request-signature-preview">
+                  <img src={request.applicantSignature} alt="Signature numérique du demandeur" />
+                </div>
+              )}
+            </div>
             <div className="detail-item-label">Justification</div>
             <div className="justification-block">{request.justification}</div>
           </Card>

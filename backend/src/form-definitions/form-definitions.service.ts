@@ -15,6 +15,7 @@ import { UpdateFormDefinitionDto } from './dto/update-form-definition.dto';
 import {
   DEFAULT_FORM_DEFINITIONS,
   DefaultFormDefinition,
+  DefaultFormField,
   RESERVED_FIELD_KEYS,
 } from './form-definitions.defaults';
 import {
@@ -95,6 +96,10 @@ export class FormDefinitionsService implements OnModuleInit {
         missing.map((type) => this.fromDefaults(DEFAULT_FORM_DEFINITIONS[type])),
       );
       this.logger.log(`Formulaires initialisés : ${missing.join(', ')}`);
+    }
+    const upgraded = await this.syncManagedDefaultFields();
+    if (upgraded.length > 0) {
+      this.logger.log(`Formulaires mis a jour : ${upgraded.join(', ')}`);
     }
     this.cache = null;
   }
@@ -442,6 +447,87 @@ export class FormDefinitionsService implements OnModuleInit {
   // ------------------------------------------------------------------
   // Privé
   // ------------------------------------------------------------------
+
+  private async syncManagedDefaultFields(): Promise<RequestType[]> {
+    const definitions = await this.formModel.find().exec();
+    const upgraded: RequestType[] = [];
+
+    for (const definition of definitions) {
+      const defaults = DEFAULT_FORM_DEFINITIONS[definition.requestType];
+      if (!defaults) continue;
+
+      const fields = definition.fields.map((field) => this.fieldToPlain(field));
+      let changed = false;
+
+      for (const defaultField of defaults.fields) {
+        const nextField = this.fromDefaultField(defaultField);
+        const index = fields.findIndex((field) => field.key === nextField.key);
+
+        if (index === -1) {
+          fields.push(nextField);
+          changed = true;
+          continue;
+        }
+
+        if (!this.isManagedDefaultField(definition.requestType, nextField.key)) {
+          continue;
+        }
+
+        if (JSON.stringify(fields[index]) !== JSON.stringify(nextField)) {
+          fields[index] = nextField;
+          changed = true;
+        }
+      }
+
+      if (!changed) continue;
+      definition.fields = fields as FormFieldDefinition[];
+      definition.version += 1;
+      await definition.save();
+      upgraded.push(definition.requestType);
+    }
+
+    return upgraded;
+  }
+
+  private isManagedDefaultField(requestType: RequestType, key: string): boolean {
+    return (
+      key === 'commitmentAccepted' ||
+      (requestType === RequestType.NETWORK_SHARE && key === 'permissionLevel')
+    );
+  }
+
+  private fromDefaultField(field: DefaultFormField): FormFieldDefinition {
+    return {
+      key: field.key,
+      label: field.label,
+      kind: field.kind,
+      required: field.required,
+      maxLength: field.maxLength ?? null,
+      min: field.min ?? null,
+      max: field.max ?? null,
+      placeholder: field.placeholder ?? '',
+      helpText: field.helpText ?? '',
+      options: field.options ?? [],
+    } as FormFieldDefinition;
+  }
+
+  private fieldToPlain(field: FormFieldDefinition): FormFieldDefinition {
+    return {
+      key: field.key,
+      label: field.label,
+      kind: field.kind,
+      required: field.required,
+      maxLength: field.maxLength ?? null,
+      min: field.min ?? null,
+      max: field.max ?? null,
+      placeholder: field.placeholder ?? '',
+      helpText: field.helpText ?? '',
+      options: (field.options ?? []).map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    } as FormFieldDefinition;
+  }
 
   private async load(): Promise<Map<RequestType, FormDefinitionDocument>> {
     if (this.cache) {
