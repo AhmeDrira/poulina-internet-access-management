@@ -196,6 +196,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   FORM_ACTIVATED: 'Formulaire remis à disposition',
   FORM_DEACTIVATED: 'Formulaire retiré du catalogue',
   FORM_RESET: 'Formulaire réinitialisé',
+  AI_JUSTIFICATION_IMPROVED: 'Justification reformulée par l’IA',
+  AI_JUSTIFICATION_SUMMARIZED: 'Synthèse IA d’une justification',
   MESSAGE_SENT: 'Message interne envoyé',
   THREAD_RESOLVED: 'Échange marqué comme traité',
   THREAD_REOPENED: 'Échange rouvert',

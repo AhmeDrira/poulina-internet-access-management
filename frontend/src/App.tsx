@@ -7,6 +7,7 @@ import { ADMIN_ROLES, GLOBAL_READ_ROLES, MESSAGING_ROLES, REQUESTER_ROLES, Role 
 
 import LoginPage from './pages/auth/LoginPage';
 import ActivationPage from './pages/auth/ActivationPage';
+import SsoCallbackPage from './pages/auth/SsoCallbackPage';
 import ChangePasswordPage from './pages/auth/ChangePasswordPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import ChooseRequestTypePage from './pages/requests/ChooseRequestTypePage';
@@ -33,6 +34,8 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             {/* Activation d'un compte par lien temporaire : accessible sans session */}
             <Route path="/activation/:token" element={<ActivationPage />} />
+            {/* Retour du fournisseur d'identité (authentification unique) */}
+            <Route path="/sso/callback" element={<SsoCallbackPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<DashboardPage />} />

@@ -12,6 +12,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingBlock } from '../../components/ui/Spinner';
 import { RequestTimeline } from '../../components/requests/RequestTimeline';
 import { RequestThreadPanel } from '../../components/messaging/RequestThreadPanel';
+import { JustificationSummaryPanel } from '../../components/ai/JustificationSummary';
 import { useApi } from '../../hooks/useApi';
 import { useAuth } from '../../store/AuthContext';
 import { useFormDefinitions } from '../../store/FormDefinitionsContext';
@@ -238,6 +239,12 @@ export default function RequestDetailsPage() {
               )}
             </div>
             <div className="detail-item-label">Justification</div>
+            {canSeeScore && (
+              <JustificationSummaryPanel
+                requestId={request._id}
+                justification={request.justification}
+              />
+            )}
             <div className="justification-block">{request.justification}</div>
           </Card>
 

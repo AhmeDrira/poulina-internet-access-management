@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { StatisticsModule } from './statistics/statistics.module';
 import { DecisionHelperModule } from './decision-helper/decision-helper.module';
+import { AiModule } from './ai/ai.module';
 import { FormDefinitionsModule } from './form-definitions/form-definitions.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -43,6 +44,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     DecisionHelperModule,
     FormDefinitionsModule,
     MessagingModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -67,6 +67,13 @@ export class User {
   @Prop({ type: Date, default: null })
   activatedAt: Date | null;
 
+  /**
+   * Identifiant du compte chez le fournisseur d'identité (claim `sub`),
+   * renseigné à la première connexion par authentification unique.
+   */
+  @Prop({ type: String, default: null })
+  ssoSubject: string | null;
+
   /** Personne habilitée ayant créé le compte */
   @Prop({ type: Types.ObjectId, ref: 'User', default: null })
   invitedBy: Types.ObjectId | null;

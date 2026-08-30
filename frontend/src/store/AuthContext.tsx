@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { authApi } from '../api/auth.api';
+import { ssoApi } from '../api/sso.api';
 import { TOKEN_KEY, USER_KEY } from '../api/client';
 import { Role, User } from '../types';
 
@@ -17,6 +18,8 @@ interface AuthContextValue {
   /** true pendant la restauration de session au chargement */
   initializing: boolean;
   login: (email: string, password: string) => Promise<User>;
+  /** Ouvre la session à partir du code à usage unique renvoyé par le SSO */
+  loginWithSsoCode: (code: string) => Promise<User>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   hasRole: (...roles: Role[]) => boolean;
@@ -65,6 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return loggedUser;
   }, []);
 
+  const loginWithSsoCode = useCallback(async (code: string) => {
+    const { accessToken, user: loggedUser } = await ssoApi.exchange(code);
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(loggedUser));
+    setUser(loggedUser);
+    return loggedUser;
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -88,11 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: user !== null,
       initializing,
       login,
+      loginWithSsoCode,
       logout,
       refreshUser,
       hasRole,
     }),
-    [user, initializing, login, logout, refreshUser, hasRole],
+    [user, initializing, login, loginWithSsoCode, logout, refreshUser, hasRole],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

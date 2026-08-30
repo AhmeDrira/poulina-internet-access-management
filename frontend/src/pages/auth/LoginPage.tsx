@@ -1,7 +1,8 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { BarChart3, Bell, GitBranch, Globe, ShieldCheck } from 'lucide-react';
+import { BarChart3, Bell, GitBranch, Globe, KeyRound, ShieldCheck } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
+import { ssoApi, SsoConfig } from '../../api/sso.api';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -26,11 +27,26 @@ const DEMO_ACCOUNTS = [
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [sso, setSso] = useState<SsoConfig>({ enabled: false, label: '' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [apiError, setApiError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Disponibilité de l'authentification unique (masque le bouton si non configurée)
+  useEffect(() => {
+    let cancelled = false;
+    ssoApi
+      .config()
+      .then((config) => {
+        if (!cancelled) setSso(config);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -105,6 +121,23 @@ export default function LoginPage() {
 
             {apiError && <Alert variant="danger">{apiError}</Alert>}
 
+            {sso.enabled && (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<ShieldCheck size={16} />}
+                  style={{ width: '100%' }}
+                  onClick={() => ssoApi.startLogin('/')}
+                >
+                  {sso.label}
+                </Button>
+                <div className="login-separator">
+                  <span>ou avec vos identifiants</span>
+                </div>
+              </>
+            )}
+
             <form onSubmit={handleSubmit} noValidate>
               <FormField label="Email professionnel" required error={fieldErrors.email}>
                 <Input
@@ -127,7 +160,12 @@ export default function LoginPage() {
                   autoComplete="current-password"
                 />
               </FormField>
-              <Button type="submit" loading={loading} style={{ width: '100%' }}>
+              <Button
+                type="submit"
+                loading={loading}
+                icon={<KeyRound size={16} />}
+                style={{ width: '100%' }}
+              >
                 Se connecter
               </Button>
             </form>

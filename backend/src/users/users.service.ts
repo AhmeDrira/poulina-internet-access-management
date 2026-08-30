@@ -150,6 +150,29 @@ export class UsersService {
     );
   }
 
+  /**
+   * Marque un compte comme authentifié par le fournisseur d'identité :
+   * l'identité étant prouvée, le compte est considéré comme activé et tout
+   * lien d'activation en attente devient inutile.
+   */
+  async markSsoAuthenticated(id: string, subject: string): Promise<void> {
+    const updates: Record<string, unknown> = {
+      ssoSubject: subject,
+      activationTokenHash: null,
+      activationExpiresAt: null,
+    };
+    const user = await this.userModel.findById(id).select('+password').exec();
+    if (user && !user.activatedAt) {
+      updates.activatedAt = new Date();
+    }
+    // Un compte sans mot de passe local ne peut pas « changer » de mot de passe :
+    // l'obligation n'a de sens que pour les comptes à mot de passe.
+    if (user && !user.password) {
+      updates.mustChangePassword = false;
+    }
+    await this.userModel.updateOne({ _id: id }, updates);
+  }
+
   /** Répartition des comptes par rôle (console de supervision) */
   async countByRole(): Promise<Record<string, number>> {
     const rows = await this.userModel.aggregate<{ _id: Role; count: number }>([

@@ -26,6 +26,29 @@ export class DecisionSupport {
 
 export const DecisionSupportSchema = SchemaFactory.createForClass(DecisionSupport);
 
+/**
+ * Synthèse de la justification générée par l'IA à la demande du chef de
+ * département, mise en cache pour ne pas la recalculer à chaque ouverture.
+ */
+@Schema({ _id: false })
+export class JustificationSummary {
+  @Prop({ required: true })
+  text: string;
+
+  @Prop({ type: [String], default: [] })
+  bullets: string[];
+
+  /** Empreinte de la justification résumée : invalide le cache après re-soumission */
+  @Prop({ required: true })
+  sourceHash: string;
+
+  @Prop({ type: Date, required: true })
+  generatedAt: Date;
+}
+
+export const JustificationSummarySchema =
+  SchemaFactory.createForClass(JustificationSummary);
+
 export type AccessRequestDocument = HydratedDocument<AccessRequest>;
 
 @Schema({ timestamps: true })
@@ -151,13 +174,28 @@ export class AccessRequest {
   @Prop({ type: Date, default: null })
   closedAt: Date | null;
 
-  /** Évite d'envoyer plusieurs rappels d'expiration imminente */
+  /**
+   * Seuils de rappel déjà envoyés, en jours avant l'expiration (ex : [7, 3]).
+   * Évite d'envoyer deux fois le même rappel à l'employé.
+   */
+  @Prop({ type: [Number], default: [] })
+  expiryRemindersSent: number[];
+
+  /**
+   * @deprecated Remplacé par `expiryRemindersSent`.
+   * Conservé pour les demandes créées avant l'ajout du second rappel :
+   * un `true` est interprété comme « rappel à 7 jours déjà envoyé ».
+   */
   @Prop({ default: false })
   expiryReminderSent: boolean;
 
   // --- Aide à la décision ---
   @Prop({ type: DecisionSupportSchema, required: true })
   decisionSupport: DecisionSupport;
+
+  /** Synthèse IA de la justification (générée à la demande, mise en cache) */
+  @Prop({ type: JustificationSummarySchema, default: null })
+  aiSummary: JustificationSummary | null;
 
   createdAt: Date;
   updatedAt: Date;

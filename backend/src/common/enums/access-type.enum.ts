@@ -7,6 +7,13 @@ export enum AccessType {
   RESTRICTED = 'RESTRICTED',
 }
 
+/** Libellés français des types d'accès (PDF, contexte transmis à l'assistance IA) */
+export const ACCESS_TYPE_LABELS: Record<AccessType, string> = {
+  [AccessType.FULL]: 'Accès complet',
+  [AccessType.STANDARD]: 'Accès standard (navigation professionnelle filtrée)',
+  [AccessType.RESTRICTED]: 'Accès restreint (liste blanche de sites)',
+};
+
 export enum DurationType {
   /** Accès limité dans le temps (durée en jours obligatoire) */
   TEMPORARY = 'TEMPORARY',

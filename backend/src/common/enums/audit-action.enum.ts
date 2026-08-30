@@ -41,6 +41,11 @@ export enum AuditAction {
   FORM_ACTIVATED = 'FORM_ACTIVATED',
   FORM_DEACTIVATED = 'FORM_DEACTIVATED',
   FORM_RESET = 'FORM_RESET',
+  // --- Assistance à la rédaction (IA) ---
+  /** Un employé a fait reformuler sa justification */
+  AI_JUSTIFICATION_IMPROVED = 'AI_JUSTIFICATION_IMPROVED',
+  /** Un validateur a demandé la synthèse d'une justification */
+  AI_JUSTIFICATION_SUMMARIZED = 'AI_JUSTIFICATION_SUMMARIZED',
   // --- Messagerie interne (contenu non journalisé, seul l'échange est tracé) ---
   MESSAGE_SENT = 'MESSAGE_SENT',
   THREAD_RESOLVED = 'THREAD_RESOLVED',

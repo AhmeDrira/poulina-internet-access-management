@@ -11,6 +11,7 @@ import {
   DURATION_LABELS,
   RECOMMENDATION_LABELS,
 } from '../../utils/labels';
+import { JustificationSummaryPanel } from '../ai/JustificationSummary';
 import { ScoreBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { FormField, Textarea } from '../ui/FormField';
@@ -154,6 +155,10 @@ export function DecisionModal({ request, open, onClose, onDecided }: DecisionMod
       </div>
 
       <div className="detail-item-label">Justification</div>
+      <JustificationSummaryPanel
+        requestId={request._id}
+        justification={request.justification}
+      />
       <div className="justification-block" style={{ marginBottom: 16 }}>
         {request.justification}
       </div>

@@ -31,11 +31,13 @@ informatique du Groupe Holding Poulina.
 8. [Gestion des formulaires](#gestion-des-formulaires)
 9. [Messagerie interne de traitement](#messagerie-interne-de-traitement)
 10. [Cycle de vie d'un compte](#cycle-de-vie-dun-compte)
-11. [Modèle de données](#modèle-de-données)
-12. [API REST](#api-rest)
-13. [Sécurité](#sécurité)
-14. [Module d'aide à la décision](#module-daide-à-la-décision)
-15. [Évolutions prévues](#évolutions-prévues)
+11. [Authentification unique (SSO)](#authentification-unique-sso)
+12. [Assistance à la rédaction par IA](#assistance-à-la-rédaction-par-ia)
+13. [Modèle de données](#modèle-de-données)
+14. [API REST](#api-rest)
+15. [Sécurité](#sécurité)
+16. [Module d'aide à la décision](#module-daide-à-la-décision)
+17. [Évolutions prévues](#évolutions-prévues)
 
 ---
 
@@ -45,6 +47,8 @@ informatique du Groupe Holding Poulina.
 |---|---|
 | Frontend | React 18 + TypeScript (Vite), React Router, Axios, lucide-react, Recharts |
 | Backend | NestJS 11 + TypeScript, Passport JWT, class-validator (DTO), Swagger |
+| Authentification unique | OpenID Connect (`openid-client`) — Entra ID, Keycloak, Google Workspace |
+| Assistance à la rédaction | API Claude (`@anthropic-ai/sdk`, modèle `claude-opus-5`) — optionnelle |
 | Base de données | MongoDB + Mongoose (références `ObjectId` entre collections) |
 | Sécurité | JWT, RBAC (guards par rôle), bcrypt (hash des mots de passe), helmet, rate-limiting sur le login |
 | Tâches planifiées | @nestjs/schedule (expiration automatique des accès + rappels) |
@@ -162,11 +166,13 @@ pour dérouler le scénario d'arrivée d'un nouvel employé.
 - **Notifications internes** à chaque étape (création → chef ; décision → employé + équipe réseau ; activation/clôture/expiration → employé), avec compteur temps réel dans la barre de navigation.
 - **Historique (timeline)** de chaque demande : qui a fait quoi, quand, avec quel commentaire.
 - **Journal d'audit** : connexions (réussies et échouées), créations/décisions/traitements, modifications d'utilisateurs et de rôles — avec adresse IP et user-agent.
-- **Expiration automatique** : une tâche planifiée fait passer les accès arrivés à échéance au statut `EXPIRED` et envoie un rappel 7 jours avant.
+- **Expiration automatique** : une tâche planifiée fait passer les accès arrivés à échéance au statut `EXPIRED` et envoie **deux rappels à l'employé, 7 jours puis 3 jours avant l'échéance** (le second insiste sur la coupure imminente). Chaque seuil n'est notifié qu'une fois ; un accès de très courte durée ne reçoit que le rappel le plus urgent.
 - **Statistiques** : volumes par statut et par département, évolution mensuelle, taux d'acceptation, délais moyens de validation et de traitement.
 - **Formulaires modifiables sans redéploiement** : les 6 formulaires vivent en base et sont édités par le super administrateur (voir [Gestion des formulaires](#gestion-des-formulaires)).
 - **Messagerie interne** cloisonnée entre le chef de département et l'équipe réseau (voir [Messagerie interne de traitement](#messagerie-interne-de-traitement)).
 - **Comptes créés par invitation** : lien temporaire à usage unique, mot de passe défini par l'employé (voir [Cycle de vie d'un compte](#cycle-de-vie-dun-compte)).
+- **Authentification unique (SSO)** en option, à côté de la connexion par mot de passe (voir [Authentification unique](#authentification-unique-sso)).
+- **Assistance à la rédaction par IA** en option : reformulation de la justification pour l'employé, synthèse des justifications longues pour le validateur (voir [Assistance à la rédaction](#assistance-à-la-rédaction-par-ia)).
 
 ## Workflow et statuts d'une demande
 
@@ -277,6 +283,90 @@ l'API — hors profil et changement de mot de passe — et l'interface redirige 
 jusqu'à ce qu'un nouveau mot de passe soit enregistré. Le mot de passe actuel reste valable pour
 se connecter : aucun risque de blocage définitif.
 
+## Authentification unique (SSO)
+
+L'application accepte deux modes de connexion : le **mot de passe interne** (toujours
+disponible) et l'**authentification unique OpenID Connect** (optionnelle). Le bouton SSO
+n'apparaît sur la page de connexion que si le serveur est configuré.
+
+**Activation** — renseigner dans `backend/.env` :
+
+```bash
+SSO_ISSUER_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
+SSO_CLIENT_ID=<identifiant de l'application enregistrée>
+SSO_CLIENT_SECRET=<secret client>
+SSO_REDIRECT_URI=http://localhost:3000/api/auth/sso/callback
+SSO_SCOPES=openid email profile
+SSO_BUTTON_LABEL=Se connecter avec le compte du groupe
+```
+
+Seule l'URL de l'émetteur change d'un fournisseur à l'autre : **Microsoft Entra ID**,
+**Keycloak** ou **Google Workspace** fonctionnent avec le même code (découverte automatique via
+`/.well-known/openid-configuration`). L'URL de redirection doit être déclarée à l'identique chez
+le fournisseur.
+
+**Déroulement**
+
+```
+Employé → « Se connecter avec le compte du groupe »
+        → API /auth/sso/login   (génère state + PKCE, redirige)
+        → Fournisseur d'identité (authentification réelle de l'employé)
+        → API /auth/sso/callback (vérifie state, nonce, PKCE et signature du jeton)
+        → Portail /sso/callback?code=…   (code à usage unique, valable 1 minute)
+        → API /auth/sso/exchange  → jeton de session applicatif
+```
+
+**Choix de conception**
+
+- **Authorization Code + PKCE**, avec `state` (anti-CSRF) et `nonce` (anti-rejeu). La signature
+  du jeton d'identité est vérifiée contre le JWKS du fournisseur.
+- **Le jeton de session ne transite jamais dans une URL** : le fournisseur renvoie un code à
+  usage unique que le portail échange par un POST. Rien de sensible dans l'historique du
+  navigateur ni dans les en-têtes `Referer`.
+- **Aucun compte n'est créé automatiquement.** Une adresse inconnue est refusée avec un message
+  explicite : la création de compte reste le fait d'une personne habilitée (voir
+  [Cycle de vie d'un compte](#cycle-de-vie-dun-compte)). Les rôles et rattachements restent
+  gérés dans l'application, pas dans l'annuaire.
+- La première connexion SSO **active** le compte (l'identité étant prouvée par le fournisseur) et
+  invalide tout lien d'activation en attente.
+- Le paramètre `returnTo` n'accepte que des chemins internes : pas de redirection ouverte.
+- Chaque connexion, réussie ou refusée, est inscrite au journal d'audit avec la mention `SSO`.
+- **Le fournisseur n'est pas un point de panne bloquant** : il est découvert à la première
+  utilisation, et s'il est injoignable, la connexion par mot de passe reste disponible.
+
+## Assistance à la rédaction par IA
+
+Deux aides ponctuelles, appuyées sur l'**API Claude** (modèle `claude-opus-5`), sur les deux
+points où la qualité rédactionnelle pèse réellement sur le circuit :
+
+| Fonction | Pour qui | Où |
+|---|---|---|
+| **Améliorer la rédaction** — reformule le brouillon de justification | Employé (et tout demandeur) | Sous le champ « Justification » du formulaire |
+| **Résumer cette justification** — synthèse en une phrase + 2 à 4 points | Chef de département, administrateurs, sécurité | Modale d'examen et page de détail, dès 400 caractères |
+
+**Activation** — renseigner `ANTHROPIC_API_KEY` dans `backend/.env`. Sans clé, les deux boutons
+sont **masqués** et l'application fonctionne exactement comme avant : l'IA est un confort, jamais
+un passage obligé.
+
+**Garde-fous**
+
+- **L'IA ne décide jamais** : elle rédige ou résume. Le score d'aide à la décision et la décision
+  du chef restent inchangés, et la consigne de synthèse interdit explicitement tout avis.
+- **Elle n'invente rien** : la reformulation n'utilise que les éléments du brouillon et le
+  contexte de la demande. Si le brouillon est trop vague, elle renvoie la liste des informations
+  manquantes au lieu d'inventer.
+- **L'employé garde la main** : la proposition s'affiche côte à côte avec son texte, et il choisit
+  de l'appliquer ou de garder le sien. Rien n'est jamais réécrit automatiquement.
+- **La justification complète reste affichée** au validateur : la synthèse s'ajoute, elle ne
+  remplace pas.
+- **Anti-injection** : le texte de l'utilisateur est transmis comme donnée délimitée, avec
+  consigne explicite de ne jamais exécuter d'instruction qu'il contiendrait.
+- **Coût maîtrisé** : effort de raisonnement réduit sur ces tâches courtes, limitation de débit
+  par utilisateur, et **mise en cache de la synthèse** sur la demande (empreinte de la
+  justification : le cache s'invalide de lui-même après une re-soumission).
+- **Traçabilité** : chaque usage est inscrit au journal d'audit (`AI_JUSTIFICATION_IMPROVED`,
+  `AI_JUSTIFICATION_SUMMARIZED`), sans le contenu rédigé.
+
 ## Modèle de données
 
 Collections MongoDB (références par `ObjectId`) :
@@ -299,6 +389,8 @@ Préfixe `/api` — documentation complète sur **`/api/docs`** (Swagger, auth B
 | Ressource | Endpoints principaux |
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/change-password`, **`GET/POST /auth/activation/:token`** (public — vérification puis définition du mot de passe) |
+| **SSO** (public) | `GET /auth/sso/config` (disponibilité), `GET /auth/sso/login` (redirection vers le fournisseur), `GET /auth/sso/callback`, `POST /auth/sso/exchange` (code à usage unique → jeton de session) |
+| **Assistance IA** | `GET /ai/status`, `POST /ai/justification/improve` (demandeurs), `POST /ai/access-requests/:id/summary` (validateurs) |
 | Utilisateurs (ADMIN / SUPER_ADMIN) | `GET/POST /users`, `GET/PATCH/DELETE /users/:id`, `PATCH /users/:id/activate|deactivate`, **`POST /users/:id/activation-link`** (nouveau lien d'accès ou réinitialisation), `GET /users/summary` (SUPER_ADMIN) |
 | **Formulaires** | `GET /form-definitions` (tous rôles), `GET /form-definitions/:type` · SUPER_ADMIN : `PATCH /form-definitions/:type`, `PATCH /form-definitions/:type/activate|deactivate`, `POST /form-definitions/:type/reset`, `GET /form-definitions/:type/usage` |
 | **Messagerie** (MANAGER / NETWORK_TEAM) | `GET /messaging/threads`, `GET /messaging/unread-count`, `GET /messaging/unread-threads`, `GET /messaging/requests/:requestId`, `POST /messaging/requests/:requestId/messages`, `PATCH /messaging/threads/:id/resolve|reopen` |
@@ -312,7 +404,8 @@ Préfixe `/api` — documentation complète sur **`/api/docs`** (Swagger, auth B
 
 ## Sécurité
 
-- **Authentification JWT** (expiration configurable) — toutes les routes sont protégées par défaut (guard global) ; seuls le login et l'activation de compte sont publics.
+- **Authentification JWT** (expiration configurable) — toutes les routes sont protégées par défaut (guard global) ; seuls le login, l'activation de compte et les routes SSO sont publics.
+- **SSO OpenID Connect** : Authorization Code + PKCE, `state` et `nonce` vérifiés, signature du jeton d'identité validée contre le JWKS du fournisseur, jeton de session jamais exposé dans une URL (code d'échange à usage unique valable 1 minute), aucune création de compte automatique, pas de redirection ouverte.
 - **RBAC** : décorateur `@Roles()` + guard global ; contrôles fins côté service (un chef ne voit que son département, un employé que ses demandes...).
 - **Mots de passe hachés** avec bcrypt (10 rounds), jamais renvoyés par l'API (`select: false`). Politique commune : 8 caractères minimum, au moins une lettre et un chiffre.
 - **Aucun mot de passe défini par un tiers** : les comptes sont créés sans mot de passe et activés par leur titulaire via un **lien à usage unique** dont seule l'empreinte SHA-256 est stockée, avec expiration (48 h par défaut).
@@ -327,6 +420,7 @@ Préfixe `/api` — documentation complète sur **`/api/docs`** (Swagger, auth B
 - **Champs spécifiques par formulaire validés côté serveur** d'après la définition en base (liste blanche des clés, valeurs autorisées, bornes, engagements obligatoires) — voir `backend/src/form-definitions/`.
 - **Messagerie cloisonnée** : accessible au seul chef du département concerné et à l'équipe réseau, à partir de la validation de la demande ; le contenu des messages n'est jamais journalisé.
 - **Échappement des saisies** utilisées dans les filtres de recherche MongoDB (anti-injection regex).
+- **Assistance IA encadrée** : texte utilisateur transmis comme donnée délimitée (anti-injection de consigne), aucune décision déléguée au modèle, limitation de débit par utilisateur, journalisation de l'usage sans le contenu, et désactivation complète en l'absence de clé API.
 
 ## Module d'aide à la décision
 

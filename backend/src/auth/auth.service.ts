@@ -5,10 +5,12 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuditAction } from '../common/enums';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
+import { SsoIdentity } from './sso.service';
 
 /** Informations minimales affichées sur la page d'activation (lien temporaire) */
 export interface ActivationTarget {
@@ -87,6 +89,81 @@ export class AuthService {
 
   async getProfile(authUser: AuthUser) {
     return this.usersService.findById(authUser.userId);
+  }
+
+  // ------------------------------------------------------------------
+  // Authentification unique (SSO / OpenID Connect)
+  // ------------------------------------------------------------------
+
+  /**
+   * Rattache l'identité fournie par le fournisseur d'identité à un compte de
+   * l'application. Aucun compte n'est créé automatiquement : conformément au
+   * principe « le compte est créé par une personne habilitée », une adresse
+   * inconnue est refusée.
+   */
+  async resolveSsoUser(
+    identity: SsoIdentity,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<UserDocument> {
+    const user = await this.usersService.findByEmailWithPassword(identity.email);
+
+    const fail = async (reason: string, message: string) => {
+      await this.auditLogs.record({
+        userId: user ? user._id.toString() : null,
+        userEmail: identity.email,
+        action: AuditAction.LOGIN_FAILED,
+        ipAddress,
+        userAgent,
+        details: { raison: reason, methode: 'SSO' },
+      });
+      throw new UnauthorizedException(message);
+    };
+
+    if (!user) {
+      await fail(
+        'Compte SSO inconnu',
+        `Aucun compte n'est associé à ${identity.email} dans l'application. Contactez votre administrateur.`,
+      );
+    }
+    if (!user!.isActive) {
+      await fail('Compte désactivé', 'Votre compte est désactivé. Contactez votre administrateur.');
+    }
+
+    // L'identité est prouvée par le fournisseur : le compte devient utilisable
+    await this.usersService.markSsoAuthenticated(user!._id.toString(), identity.subject);
+    return user!;
+  }
+
+  /**
+   * Ouvre la session applicative après une authentification SSO validée
+   * (le code d'échange à usage unique a déjà été consommé).
+   */
+  async issueSsoSession(userId: string, ipAddress: string, userAgent: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user.isActive) {
+      throw new UnauthorizedException('Votre compte a été désactivé.');
+    }
+
+    await this.usersService.updateLastLogin(userId);
+    await this.auditLogs.record({
+      userId,
+      userEmail: user.email,
+      action: AuditAction.LOGIN_SUCCESS,
+      ipAddress,
+      userAgent,
+      details: { methode: 'SSO' },
+    });
+
+    const payload: JwtPayload = {
+      sub: userId,
+      email: user.email,
+      role: user.role,
+    };
+    return {
+      accessToken: await this.jwtService.signAsync(payload),
+      user,
+    };
   }
 
   async changePassword(

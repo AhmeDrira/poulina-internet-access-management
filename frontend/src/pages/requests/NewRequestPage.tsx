@@ -4,6 +4,7 @@ import { CheckCircle2, Eraser, PenLine } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
 import { requestsApi } from '../../api/requests.api';
 import { servicesApi } from '../../api/services.api';
+import { ImproveJustificationButton } from '../../components/ai/ImproveJustificationButton';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -533,6 +534,20 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
                   hasError={!!errors.justification}
                   maxLength={2000}
                 />
+                <div style={{ marginTop: 8 }}>
+                  <ImproveJustificationButton
+                    requestType={type}
+                    draft={justification}
+                    accessType={definition.requiresAccessType ? accessType : undefined}
+                    durationType={withDuration ? durationType : undefined}
+                    durationDays={
+                      withDuration && durationType === DurationType.TEMPORARY
+                        ? Number(durationDays) || undefined
+                        : undefined
+                    }
+                    onApply={setJustification}
+                  />
+                </div>
               </FormField>
             )}
 
