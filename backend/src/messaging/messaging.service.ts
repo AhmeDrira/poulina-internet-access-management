@@ -214,6 +214,7 @@ export class MessagingService {
       thread: thread._id,
       request: request._id,
       department: this.departmentId(request),
+      approver: this.approverId(request),
       author: authorId,
       authorRole: authUser.role,
       body,
@@ -332,32 +333,34 @@ export class MessagingService {
         'Vous ne pouvez pas échanger sur votre propre demande (séparation des tâches).',
       );
     }
-    if (authUser.role === Role.MANAGER) {
-      if (!authUser.departmentId) {
-        throw new ForbiddenException("Votre compte n'est rattaché à aucun département.");
-      }
-      if (this.departmentId(request).toString() !== authUser.departmentId) {
-        throw new ForbiddenException(
-          'Vous ne pouvez échanger que sur les demandes de votre département.',
-        );
-      }
+    if (authUser.role === Role.MANAGER && !this.isApproverOf(request, authUser)) {
+      throw new ForbiddenException(
+        'Vous ne pouvez échanger que sur les demandes dont vous êtes le responsable.',
+      );
     }
     return request;
   }
 
   /**
    * Restreint la portée des requêtes au périmètre de l'utilisateur.
-   * Les fils comme les messages portent le département de la demande :
-   * un chef ne voit que son département, l'équipe réseau voit toute la file.
+   * Un chef ne voit que les échanges des demandes dont il est le responsable
+   * direct (repli sur son département pour les demandes antérieures à l'import
+   * de la hiérarchie) ; l'équipe réseau voit toute la file.
    */
   private scopeFilter(authUser: AuthUser): FilterQuery<any> {
     if (authUser.role !== Role.MANAGER) {
       return {};
     }
-    if (!authUser.departmentId) {
-      throw new ForbiddenException("Votre compte n'est rattaché à aucun département.");
+    const conditions: FilterQuery<any>[] = [
+      { approver: new Types.ObjectId(authUser.userId) },
+    ];
+    if (authUser.departmentId) {
+      conditions.push({
+        approver: null,
+        department: new Types.ObjectId(authUser.departmentId),
+      });
     }
-    return { department: new Types.ObjectId(authUser.departmentId) };
+    return { $or: conditions };
   }
 
   private async getOrCreateThread(
@@ -374,6 +377,7 @@ export class MessagingService {
         reference: request.reference,
         requestType: request.requestType,
         department: this.departmentId(request),
+        approver: this.approverId(request),
         requesterName: `${request.firstName} ${request.lastName}`,
         status: ThreadStatus.OPEN,
         createdBy: new Types.ObjectId(authUser.userId),
@@ -426,8 +430,14 @@ export class MessagingService {
       return;
     }
 
-    const department = await this.departmentModel.findById(this.departmentId(request)).exec();
-    const managerId = department?.manager;
+    // Destinataire : le responsable de la demande, sinon le chef du département
+    let managerId = this.approverId(request);
+    if (!managerId) {
+      const department = await this.departmentModel
+        .findById(this.departmentId(request))
+        .exec();
+      managerId = department?.manager ?? null;
+    }
     // Pas de notification si le chef est lui-même le demandeur (il n'a pas accès au fil)
     if (!managerId || managerId.toString() === this.requesterId(request).toString()) {
       return;
@@ -449,5 +459,19 @@ export class MessagingService {
   private departmentId(request: AccessRequestDocument): Types.ObjectId {
     const department: any = request.department;
     return department?._id ?? department;
+  }
+
+  private approverId(request: AccessRequestDocument): Types.ObjectId | null {
+    const approver: any = request.approver;
+    return approver?._id ?? approver ?? null;
+  }
+
+  /** Le chef est-il le responsable de cette demande ? (repli : son département) */
+  private isApproverOf(request: AccessRequestDocument, authUser: AuthUser): boolean {
+    const approver = this.approverId(request);
+    if (approver) {
+      return approver.toString() === authUser.userId;
+    }
+    return this.departmentId(request).toString() === authUser.departmentId;
   }
 }

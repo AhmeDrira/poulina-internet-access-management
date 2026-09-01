@@ -145,6 +145,10 @@ export interface User {
   activationExpiresAt: string | null;
   /** true = l'application est bloquée jusqu'au changement de mot de passe */
   mustChangePassword: boolean;
+  /** Responsable direct : c'est lui qui examine les demandes de cet utilisateur */
+  manager?: UserRef | null;
+  /** true = adresse générée à l'import, à remplacer (l'authentification unique ne marche pas) */
+  emailIsTemporary?: boolean;
   createdAt: string;
   updatedAt: string;
 }

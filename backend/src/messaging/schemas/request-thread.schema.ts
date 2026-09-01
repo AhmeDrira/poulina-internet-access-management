@@ -21,9 +21,13 @@ export class RequestThread {
   @Prop({ type: String, enum: RequestType, required: true })
   requestType: RequestType;
 
-  /** Département de la demande : borne l'accès du chef de département */
+  /** Département de la demande (affichage et repli d'accès) */
   @Prop({ type: Types.ObjectId, ref: 'Department', required: true, index: true })
   department: Types.ObjectId;
+
+  /** Responsable de la demande : borne l'accès du chef de département */
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  approver: Types.ObjectId | null;
 
   /** Nom du demandeur, dupliqué pour l'affichage de la liste des fils */
   @Prop({ required: true, trim: true })

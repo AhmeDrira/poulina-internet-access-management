@@ -222,7 +222,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
             <CheckCircle2 size={52} style={{ color: 'var(--green-600)', marginBottom: 14 }} />
             <h2 style={{ marginBottom: 8 }}>Demande {created.reference} soumise avec succès</h2>
             <p className="text-muted" style={{ marginBottom: 22 }}>
-              Elle a été transmise au chef de votre département pour validation. Vous serez
+              Elle a été transmise à votre responsable direct pour validation. Vous serez
               notifié à chaque changement de statut.
             </p>
             <div className="flex-row" style={{ justifyContent: 'center' }}>
@@ -355,7 +355,7 @@ export default function NewRequestPage({ editMode = false }: { editMode?: boolea
         subtitle={
           editMode
             ? 'Corrigez les éléments demandés puis re-soumettez au chef de département'
-            : "La demande sera envoyée automatiquement au chef de votre département"
+            : "La demande sera envoyée automatiquement à votre responsable direct"
         }
       />
 

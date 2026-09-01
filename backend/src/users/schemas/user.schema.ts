@@ -36,6 +36,23 @@ export class User {
   @Prop({ type: Types.ObjectId, ref: 'Service', default: null })
   service: Types.ObjectId | null;
 
+  /**
+   * Responsable direct (hiérarchie de l'annuaire RH).
+   * C'est lui qui examine les demandes de cet employé : le rattachement
+   * hiérarchique prime sur le département, car un responsable peut encadrer
+   * plusieurs unités et une unité compter plusieurs responsables.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  manager: Types.ObjectId | null;
+
+  /**
+   * Adresse générée automatiquement à l'import faute d'email dans l'annuaire
+   * source. Ces comptes doivent recevoir leur vraie adresse professionnelle
+   * (et ne peuvent pas utiliser l'authentification unique en attendant).
+   */
+  @Prop({ default: false })
+  emailIsTemporary: boolean;
+
   /** Poste occupé (ex : Développeur, Comptable...) */
   @Prop({ trim: true, default: '' })
   position: string;

@@ -237,7 +237,7 @@ export default function ManagerDashboard() {
           rowKey={(row) => row._id}
           loading={list.loading}
           emptyTitle="Aucune demande en attente"
-          emptyMessage="Aucune demande de votre département ne correspond à ces filtres."
+          emptyMessage="Aucune demande de vos collaborateurs ne correspond à ces filtres."
           onRowClick={(row) => navigate(`/requests/${row._id}`)}
         />
         {list.data && (

@@ -38,6 +38,7 @@ import { User, UserDocument } from './schemas/user.schema';
 const BCRYPT_ROUNDS = 10;
 const POPULATE_DEPARTMENT = { path: 'department', select: 'name code' };
 const POPULATE_SERVICE = { path: 'service', select: 'name' };
+const POPULATE_MANAGER = { path: 'manager', select: 'firstName lastName matricule email' };
 const DEFAULT_ACTIVATION_TTL_HOURS = 48;
 
 interface AuditContext {
@@ -103,6 +104,7 @@ export class UsersService {
         .limit(query.limit)
         .populate(POPULATE_DEPARTMENT)
         .populate(POPULATE_SERVICE)
+        .populate(POPULATE_MANAGER)
         .exec(),
       this.userModel.countDocuments(filter),
     ]);
@@ -117,6 +119,7 @@ export class UsersService {
       .findById(id)
       .populate(POPULATE_DEPARTMENT)
       .populate(POPULATE_SERVICE)
+      .populate(POPULATE_MANAGER)
       .exec();
     if (!user) {
       throw new NotFoundException('Utilisateur introuvable.');

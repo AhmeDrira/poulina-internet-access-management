@@ -96,6 +96,14 @@ export class AccessRequest {
   @Prop({ type: Types.ObjectId, ref: 'Service', default: null })
   service: Types.ObjectId | null;
 
+  /**
+   * Responsable chargé d'examiner cette demande, figé à la création
+   * (instantané de la hiérarchie : une réorganisation ultérieure ne
+   * redirige pas une demande déjà en cours).
+   */
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  approver: Types.ObjectId | null;
+
   // --- Contenu de la demande ---
   /** Type d'accès Internet (uniquement pour les demandes INTERNET_ACCESS) */
   @Prop({ type: String, enum: AccessType, default: null })

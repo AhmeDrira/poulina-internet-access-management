@@ -374,6 +374,9 @@ export default function UsersPage() {
             {row.firstName} {row.lastName}
           </div>
           <div className="text-small text-muted">{row.email}</div>
+          {row.emailIsTemporary && (
+            <Badge color="amber">Email temporaire — SSO indisponible</Badge>
+          )}
         </div>
       ),
     },
@@ -392,6 +395,18 @@ export default function UsersPage() {
           {row.service && <div className="text-small text-muted">{row.service.name}</div>}
         </div>
       ),
+    },
+    {
+      key: 'manager',
+      header: 'Responsable direct',
+      render: (row) =>
+        row.manager ? (
+          <span className="text-small">
+            {row.manager.firstName} {row.manager.lastName}
+          </span>
+        ) : (
+          <span className="text-small text-muted">—</span>
+        ),
     },
     {
       key: 'state',

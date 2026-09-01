@@ -13,9 +13,13 @@ export class RequestMessage {
   @Prop({ type: Types.ObjectId, ref: 'AccessRequest', required: true, index: true })
   request: Types.ObjectId;
 
-  /** Département de la demande : borne le comptage des non-lus du chef */
+  /** Département de la demande (repli d'accès) */
   @Prop({ type: Types.ObjectId, ref: 'Department', required: true, index: true })
   department: Types.ObjectId;
+
+  /** Responsable de la demande : borne le comptage des non-lus du chef */
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  approver: Types.ObjectId | null;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   author: Types.ObjectId;

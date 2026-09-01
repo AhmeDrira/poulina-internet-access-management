@@ -33,11 +33,12 @@ informatique du Groupe Holding Poulina.
 10. [Cycle de vie d'un compte](#cycle-de-vie-dun-compte)
 11. [Authentification unique (SSO)](#authentification-unique-sso)
 12. [Assistance à la rédaction par IA](#assistance-à-la-rédaction-par-ia)
-13. [Modèle de données](#modèle-de-données)
-14. [API REST](#api-rest)
-15. [Sécurité](#sécurité)
-16. [Module d'aide à la décision](#module-daide-à-la-décision)
-17. [Évolutions prévues](#évolutions-prévues)
+13. [Import de l'annuaire réel](#import-de-lannuaire-réel)
+14. [Modèle de données](#modèle-de-données)
+15. [API REST](#api-rest)
+16. [Sécurité](#sécurité)
+17. [Module d'aide à la décision](#module-daide-à-la-décision)
+18. [Évolutions prévues](#évolutions-prévues)
 
 ---
 
@@ -70,7 +71,8 @@ internet-access-management/
 │       ├── audit-logs/       # Journal de sécurité et de traçabilité
 │       ├── statistics/       # Indicateurs et agrégations MongoDB
 │       ├── decision-helper/  # Score de recommandation par règles
-│       ├── seed/             # Données de démonstration
+│       ├── ai/               # Assistance à la rédaction (API Claude) — optionnelle
+│       ├── seed/             # Démonstration (seed.ts) + import de l'annuaire (import-users.ts)
 │       └── common/           # Enums, guards, décorateurs, filtres, DTO partagés
 ├── frontend/                 # SPA React (port 5173)
 │   └── src/
@@ -367,14 +369,72 @@ un passage obligé.
 - **Traçabilité** : chaque usage est inscrit au journal d'audit (`AI_JUSTIFICATION_IMPROVED`,
   `AI_JUSTIFICATION_SUMMARIZED`), sans le contenu rédigé.
 
+## Import de l'annuaire réel
+
+Les comptes de production proviennent d'un export RH (`bd users.xlsx`), importé par un
+script **idempotent** :
+
+```bash
+cd backend
+npm run import:users -- "../bd users.xlsx"
+```
+
+Le script rapproche les enregistrements **par matricule**, met à jour l'existant, ne régénère
+jamais un mot de passe déjà distribué et ne touche à aucune donnée métier (demandes,
+historiques, messagerie). Il peut donc être relancé après chaque mise à jour de l'annuaire.
+
+**Règles de transformation**
+
+| Donnée source | Règle appliquée |
+|---|---|
+| `Matricule` | Normalisé en 8 chiffres avec zéros de tête (Excel les supprime : `59967` → `00059967`). **Clé d'identité unique.** |
+| `Prenom`, `Nom` | Repris tels quels. Pour les responsables absents des lignes, déduits du libellé « PRÉNOM NOM » (particules `BEN`, `BEL`, `EL`… rattachées au nom). |
+| Email | **Absent de la source** → généré `prenom.nom@poulina.local`, sans accents, homonymes désambiguïsés par le matricule. Marqué `emailIsTemporary`. |
+| Mot de passe | Un mot de passe temporaire par compte, remis dans un fichier séparé, avec **changement imposé à la première connexion**. |
+| `Matricule_Responsable` | Rôle **chef de département** pour tout matricule qui y apparaît, et **lien hiérarchique** vers ce responsable (voir ci-dessous). |
+| `Libelle_Unite` | Département. Ni la filiale ni le coordinateur ne servent de département. |
+| `Matricule_Coordinateur` | **Non utilisé** : le coordinateur n'intervient pas dans le circuit d'approbation. |
+
+**Sorties du script** (`backend/import-output/`, non versionné) :
+
+- `identifiants-<horodatage>.csv` — matricule, nom, email, rôle, unité et mot de passe temporaire.
+  Fichier sensible : à transmettre puis détruire. Les mots de passe n'apparaissent jamais dans
+  les journaux ni dans la console.
+- `rapport-import-<horodatage>.txt` — les points demandant un arbitrage humain : prénoms/noms
+  déduits d'un libellé, comptes sans département, unités à plusieurs responsables.
+
+### Approbation par responsable direct
+
+L'annuaire réel ne permet pas de router l'approbation par département : **12 unités comptent
+deux responsables** et **14 responsables encadrent plusieurs unités** (l'un d'eux en couvre neuf).
+Le circuit s'appuie donc sur le **lien hiérarchique** :
+
+- `User.manager` porte le responsable direct, `AccessRequest.approver` en fige un instantané à
+  la création (une réorganisation ne redirige pas une demande en cours) ;
+- un chef ne voit, n'examine et ne commente que les demandes de **ses collaborateurs directs**,
+  quel que soit son propre département — y compris s'il n'en a aucun ;
+- le rattachement par département reste le repli pour les demandes antérieures à l'import.
+
+Le champ `Department.manager` n'est renseigné que pour les unités à responsable unique ; il ne
+sert plus qu'à l'affichage et au repli de notification.
+
+### Authentification unique et comptes importés
+
+Les adresses `@poulina.local` sont des **substituts** : elles n'existent pas dans l'annuaire
+d'entreprise. L'authentification unique rapprochant les comptes **par email**, elle ne peut pas
+fonctionner pour ces comptes tant que leur véritable adresse professionnelle n'a pas été saisie.
+Ils se connectent par mot de passe, et l'interface d'administration les signale explicitement
+(« Email temporaire — SSO indisponible »). Corriger l'adresse d'un compte suffit à le rendre
+éligible au SSO.
+
 ## Modèle de données
 
 Collections MongoDB (références par `ObjectId`) :
 
-- **User** — identité, matricule, email, mot de passe haché (`null` avant activation), rôle, département, service, poste, actif/inactif, **cycle de vie du compte** (empreinte du lien d'activation, échéance, date d'activation, créateur du compte, changement de mot de passe imposé).
+- **User** — identité, matricule, email (`emailIsTemporary` si généré à l'import), mot de passe haché (`null` avant activation), rôle, département, service, **responsable direct** (`manager`), poste, actif/inactif, **cycle de vie du compte** (empreinte du lien d'activation, échéance, date d'activation, créateur du compte, changement de mot de passe imposé, identifiant SSO).
 - **Department** — nom, code, description, **chef responsable** (réf. User).
 - **Service** — nom, description, département de rattachement.
-- **AccessRequest** — **type de formulaire** (`requestType`, référence préfixée : `REQ-NET-…`, `REQ-DIS-…`, `REQ-USB-…`, `REQ-PRT-…`, `REQ-3G-…`, `REQ-ENG-…`), demandeur (réf.) + *snapshot* de son identité, durée, justification, **champs spécifiques du formulaire** (`formData`, validés par liste blanche), statut, décision du chef (par/quand/commentaire/motif), traitement réseau (par/quand/activation/expiration/commentaire), **score d'aide à la décision** embarqué.
+- **AccessRequest** — **type de formulaire** (`requestType`, référence préfixée : `REQ-NET-…`, `REQ-DIS-…`, `REQ-USB-…`, `REQ-PRT-…`, `REQ-3G-…`, `REQ-ENG-…`), demandeur (réf.) + *snapshot* de son identité, **responsable chargé de l'examen** (`approver`, figé à la création), durée, justification, **champs spécifiques du formulaire** (`formData`, validés par liste blanche), statut, décision du chef (par/quand/commentaire/motif), traitement réseau (par/quand/activation/expiration/commentaire), **score d'aide à la décision** embarqué.
 - **RequestHistory** — timeline de chaque transition (action, statuts, acteur, commentaire).
 - **Notification** — destinataire, type, titre, message, demande liée, lu/non lu.
 - **AuditLog** — utilisateur, action, IP, user-agent, détails, horodatage.

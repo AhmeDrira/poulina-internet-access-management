@@ -132,6 +132,8 @@ export class AccessRequestsService {
       position: dto.position?.trim() || requester.position,
       department: department._id,
       service: serviceId,
+      // Instantané de la hiérarchie : le responsable direct examinera la demande
+      approver: requester.manager ?? department.manager ?? null,
       accessType: content.accessType,
       durationType: content.durationType,
       durationDays: content.durationDays,
@@ -174,7 +176,7 @@ export class AccessRequestsService {
       performedBy: requester._id,
     });
 
-    await this.notifyManagerOfDepartment(department, {
+    await this.notifyApprover(created, department, {
       type: NotificationType.REQUEST_SUBMITTED,
       title: 'Nouvelle demande à valider',
       message: `${requester.firstName} ${requester.lastName} a soumis « ${typeLabel} » (${reference}, département ${department.name}).`,
@@ -293,14 +295,12 @@ export class AccessRequestsService {
       comment: dto.resubmitComment,
     });
 
-    if (department) {
-      await this.notifyManagerOfDepartment(department, {
-        type: NotificationType.REQUEST_RESUBMITTED,
-        title: 'Demande modifiée et re-soumise',
-        message: `${request.firstName} ${request.lastName} a mis à jour la demande ${request.reference} suite à votre demande de modification.`,
-        requestId: request._id,
-      });
-    }
+    await this.notifyApprover(request, department, {
+      type: NotificationType.REQUEST_RESUBMITTED,
+      title: 'Demande modifiée et re-soumise',
+      message: `${request.firstName} ${request.lastName} a mis à jour la demande ${request.reference} suite à votre demande de modification.`,
+      requestId: request._id,
+    });
 
     await this.auditLogs.record({
       userId: authUser.userId,
@@ -352,10 +352,8 @@ export class AccessRequestsService {
         }
         break;
       case Role.MANAGER:
-        if (!authUser.departmentId) {
-          throw new ForbiddenException("Votre compte n'est rattaché à aucun département.");
-        }
-        filter.department = new Types.ObjectId(authUser.departmentId);
+        // Le chef voit les demandes dont il est le responsable direct
+        Object.assign(filter, this.approverFilter(authUser));
         if (query.status) {
           filter.status = query.status;
         }
@@ -805,8 +803,7 @@ export class AccessRequestsService {
     const isOwner = this.requesterId(request).toString() === authUser.userId;
     const isAdminOrSecurity = GLOBAL_READ_ROLES.includes(authUser.role);
     const isDepartmentManager =
-      authUser.role === Role.MANAGER &&
-      this.departmentId(request).toString() === authUser.departmentId;
+      authUser.role === Role.MANAGER && this.isApproverOf(request, authUser);
     const isNetworkAllowed =
       authUser.role === Role.NETWORK_TEAM && NETWORK_QUEUE_STATUSES.includes(request.status);
 
@@ -931,9 +928,14 @@ export class AccessRequestsService {
     return service._id;
   }
 
-  /** Notifie le chef du département, ou les admins si aucun chef n'est désigné */
-  private async notifyManagerOfDepartment(
-    department: DepartmentDocument,
+  /**
+   * Notifie le responsable chargé d'examiner la demande.
+   * Ordre de résolution : responsable direct figé sur la demande, puis chef du
+   * département, puis les administrateurs si personne n'est désigné.
+   */
+  private async notifyApprover(
+    request: AccessRequestDocument,
+    department: DepartmentDocument | null,
     input: {
       type: NotificationType;
       title: string;
@@ -941,9 +943,10 @@ export class AccessRequestsService {
       requestId: Types.ObjectId;
     },
   ): Promise<void> {
-    if (department.manager) {
+    const recipient = this.approverId(request) ?? department?.manager ?? null;
+    if (recipient) {
       await this.notifications.notify({
-        recipientId: department.manager,
+        recipientId: recipient,
         type: input.type,
         title: input.title,
         message: input.message,
@@ -993,6 +996,40 @@ export class AccessRequestsService {
     return department?._id ?? department;
   }
 
+  /** Responsable désigné pour examiner la demande (peuplé ou non) */
+  private approverId(request: AccessRequestDocument): Types.ObjectId | null {
+    const approver: any = request.approver;
+    return approver?._id ?? approver ?? null;
+  }
+
+  /**
+   * Ce chef de département est-il chargé d'examiner cette demande ?
+   * Priorité au lien hiérarchique ; le rattachement par département reste le
+   * repli pour les demandes antérieures à l'import de la hiérarchie.
+   */
+  private isApproverOf(request: AccessRequestDocument, authUser: AuthUser): boolean {
+    const approver = this.approverId(request);
+    if (approver) {
+      return approver.toString() === authUser.userId;
+    }
+    return this.departmentId(request).toString() === authUser.departmentId;
+  }
+
+  /** Filtre des demandes qu'un chef de département doit examiner */
+  private approverFilter(authUser: AuthUser): Record<string, any> {
+    const conditions: Record<string, any>[] = [
+      { approver: new Types.ObjectId(authUser.userId) },
+    ];
+    // Demandes déposées avant l'import de la hiérarchie : rattachement par département
+    if (authUser.departmentId) {
+      conditions.push({
+        approver: null,
+        department: new Types.ObjectId(authUser.departmentId),
+      });
+    }
+    return { $or: conditions };
+  }
+
   private assertManagerCanDecide(request: AccessRequestDocument, authUser: AuthUser): void {
     if (request.status !== RequestStatus.PENDING_MANAGER) {
       throw new BadRequestException('Cette demande a déjà été traitée par un chef.');
@@ -1006,9 +1043,9 @@ export class AccessRequestsService {
     if (authUser.role === Role.ADMIN) {
       return;
     }
-    if (this.departmentId(request).toString() !== authUser.departmentId) {
+    if (!this.isApproverOf(request, authUser)) {
       throw new ForbiddenException(
-        'Vous ne pouvez valider que les demandes de votre département.',
+        'Vous ne pouvez valider que les demandes des collaborateurs dont vous êtes le responsable direct.',
       );
     }
   }

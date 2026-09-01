@@ -33,15 +33,22 @@ export class StatisticsService {
     private readonly departmentModel: Model<DepartmentDocument>,
   ) {}
 
-  /** Un chef de département ne voit que les statistiques de son département */
+  /**
+   * Un chef ne voit que les statistiques des demandes qu'il a à examiner
+   * (repli sur son département pour les demandes antérieures à l'import
+   * de la hiérarchie).
+   */
   private scopeFilter(user: AuthUser): Record<string, any> {
     if (user.role !== Role.MANAGER) {
       return {};
     }
-    if (!user.departmentId) {
-      throw new ForbiddenException("Votre compte n'est rattaché à aucun département.");
+    const conditions: Record<string, any>[] = [
+      { approver: new Types.ObjectId(user.userId) },
+    ];
+    if (user.departmentId) {
+      conditions.push({ approver: null, department: new Types.ObjectId(user.departmentId) });
     }
-    return { department: new Types.ObjectId(user.departmentId) };
+    return { $or: conditions };
   }
 
   async overview(user: AuthUser) {

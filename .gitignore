@@ -3,3 +3,10 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Sorties d'import : identifiants temporaires en clair et rapports — jamais versionnés
+backend/import-output/
+
+# Annuaire RH source : données personnelles réelles (noms, matricules, hiérarchie)
+bd users.xlsx
+~$*.xlsx
