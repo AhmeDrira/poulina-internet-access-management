@@ -13,7 +13,7 @@
     "import:users": "ts-node -r tsconfig-paths/register src/seed/import-users.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
+    "@google/genai": "^2.20.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",

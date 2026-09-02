@@ -49,7 +49,7 @@ informatique du Groupe Holding Poulina.
 | Frontend | React 18 + TypeScript (Vite), React Router, Axios, lucide-react, Recharts |
 | Backend | NestJS 11 + TypeScript, Passport JWT, class-validator (DTO), Swagger |
 | Authentification unique | OpenID Connect (`openid-client`) — Entra ID, Keycloak, Google Workspace |
-| Assistance à la rédaction | API Claude (`@anthropic-ai/sdk`, modèle `claude-opus-5`) — optionnelle |
+| Assistance à la rédaction | API Google Gemini (`@google/genai`, modèle `gemini-3.1-flash-lite`) — optionnelle |
 | Base de données | MongoDB + Mongoose (références `ObjectId` entre collections) |
 | Sécurité | JWT, RBAC (guards par rôle), bcrypt (hash des mots de passe), helmet, rate-limiting sur le login |
 | Tâches planifiées | @nestjs/schedule (expiration automatique des accès + rappels) |
@@ -71,7 +71,7 @@ internet-access-management/
 │       ├── audit-logs/       # Journal de sécurité et de traçabilité
 │       ├── statistics/       # Indicateurs et agrégations MongoDB
 │       ├── decision-helper/  # Score de recommandation par règles
-│       ├── ai/               # Assistance à la rédaction (API Claude) — optionnelle
+│       ├── ai/               # Assistance à la rédaction (API Google Gemini) — optionnelle
 │       ├── seed/             # Démonstration (seed.ts) + import de l'annuaire (import-users.ts)
 │       └── common/           # Enums, guards, décorateurs, filtres, DTO partagés
 ├── frontend/                 # SPA React (port 5173)
@@ -307,6 +307,15 @@ Seule l'URL de l'émetteur change d'un fournisseur à l'autre : **Microsoft Entr
 `/.well-known/openid-configuration`). L'URL de redirection doit être déclarée à l'identique chez
 le fournisseur.
 
+Pour Google, utiliser `SSO_ISSUER_URL=https://accounts.google.com` et conserver au minimum les
+scopes `openid email profile`. La découverte Google publiée à
+`https://accounts.google.com/.well-known/openid-configuration` fournit notamment les endpoints
+d'autorisation et de jeton ainsi que `jwks_uri=https://www.googleapis.com/oauth2/v3/certs`.
+Le callback lit le claim `email` de l'ID token, exige `email_verified=true` pour Google, puis
+rapproche l'adresse normalisée d'un compte déjà présent en base ; `preferred_username` n'est pas
+utilisé comme repli pour Google. La validation `openid-client` vérifie la signature de l'ID token
+contre le JWKS découvert, ainsi que l'issuer, l'audience, le nonce, le state et le PKCE.
+
 **Déroulement**
 
 ```
@@ -338,7 +347,7 @@ Employé → « Se connecter avec le compte du groupe »
 
 ## Assistance à la rédaction par IA
 
-Deux aides ponctuelles, appuyées sur l'**API Claude** (modèle `claude-opus-5`), sur les deux
+Deux aides ponctuelles, appuyées sur l'**API Google Gemini** (modèle stable `gemini-3.1-flash-lite`), sur les deux
 points où la qualité rédactionnelle pèse réellement sur le circuit :
 
 | Fonction | Pour qui | Où |
@@ -346,9 +355,20 @@ points où la qualité rédactionnelle pèse réellement sur le circuit :
 | **Améliorer la rédaction** — reformule le brouillon de justification | Employé (et tout demandeur) | Sous le champ « Justification » du formulaire |
 | **Résumer cette justification** — synthèse en une phrase + 2 à 4 points | Chef de département, administrateurs, sécurité | Modale d'examen et page de détail, dès 400 caractères |
 
-**Activation** — renseigner `ANTHROPIC_API_KEY` dans `backend/.env`. Sans clé, les deux boutons
-sont **masqués** et l'application fonctionne exactement comme avant : l'IA est un confort, jamais
-un passage obligé.
+**Activation** — renseigner `GEMINI_API_KEY` dans `backend/.env`. Sans clé, les deux boutons
+sont **masqués**, les routes IA répondent proprement `503 Service Unavailable` et l'application
+fonctionne exactement comme avant : l'IA est un confort, jamais un passage obligé.
+
+Le fournisseur Claude a été remplacé par Google Gemini. Le modèle utilisé est `gemini-3.1-flash-lite`,
+la version Flash-Lite stable orientée tâches courtes et volumétrie élevée ; `gemini-2.5-flash-lite`
+reste une alternative stable si le quota ou la disponibilité du projet l'exige. Le SDK demandé dans
+ce projet est `@google/genai`, le SDK JavaScript unifié actuellement recommandé par Google.
+
+**Données et niveau gratuit** — la tarification Google actuelle indique que le niveau gratuit de
+ces modèles ne facture pas les entrées/sorties, mais précise aussi que Google peut utiliser les
+entrées et sorties pour améliorer ses modèles sur ce niveau. Ce point doit être **réexaminé avant
+tout usage en production réelle avec des données d'employés** ; un niveau payant/une configuration
+contractuelle adaptée peut être nécessaire selon les exigences de confidentialité du Groupe.
 
 **Garde-fous**
 

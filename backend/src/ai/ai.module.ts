@@ -6,7 +6,7 @@ import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 
 /**
- * Assistance à la rédaction (API Claude).
+ * Assistance à la rédaction (API Google Gemini).
  * Module optionnel : sans clé API, les endpoints répondent « désactivé »
  * et l'interface masque les boutons correspondants.
  */

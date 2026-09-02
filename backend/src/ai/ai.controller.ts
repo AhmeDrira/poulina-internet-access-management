@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Req,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -57,6 +58,11 @@ export class AiController {
     summary: 'Indique si l’assistance IA est configurée (masque les boutons sinon)',
   })
   status() {
+    if (!this.ai.isEnabled()) {
+      throw new ServiceUnavailableException(
+        "L'assistance à la rédaction n'est pas configurée sur ce serveur.",
+      );
+    }
     return { enabled: this.ai.isEnabled(), summaryThreshold: SUMMARY_THRESHOLD };
   }
 

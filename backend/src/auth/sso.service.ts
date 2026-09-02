@@ -105,6 +105,11 @@ export class SsoService {
       this.discovery = Issuer.discover(issuerUrl)
         .then((issuer) => {
           this.logger.log(`Fournisseur d'identité découvert : ${issuer.issuer}`);
+          if (!issuer.metadata.jwks_uri) {
+            throw new Error(
+              "La découverte OIDC ne fournit pas d'URL JWKS pour vérifier l'ID token.",
+            );
+          }
           const client = new issuer.Client({
             client_id: this.config.get<string>('SSO_CLIENT_ID') as string,
             client_secret: this.config.get<string>('SSO_CLIENT_SECRET') as string,
@@ -183,24 +188,44 @@ export class SsoService {
       code_verifier: attempt.codeVerifier,
     });
 
-    const claims = tokenSet.claims();
-    const email = (claims.email ?? (claims as Record<string, unknown>).preferred_username) as
-      | string
-      | undefined;
+    // `client.callback` vérifie déjà le code, state, nonce, PKCE, issuer, audience
+    // et la signature de l'ID token via le `jwks_uri` issu de la découverte OIDC.
+    const claims = tokenSet.claims() as Record<string, unknown>;
+    const googleIssuer = this.isGoogleIssuer(client);
+    const emailClaim = claims.email;
+    const preferredUsername = claims.preferred_username;
+    const email =
+      typeof emailClaim === 'string'
+        ? emailClaim
+        : !googleIssuer && typeof preferredUsername === 'string'
+          ? preferredUsername
+          : undefined;
 
-    if (!email) {
+    if (!email || !email.trim()) {
       throw new Error(
         "Le fournisseur d'identité n'a pas transmis d'adresse email : vérifiez les scopes configurés.",
       );
     }
-    if (claims.email_verified === false) {
+    // Google fournit `email_verified` comme booléen avec le scope `email`.
+    // Comme le rapprochement applicatif se fait par email, l'absence de cette
+    // preuve doit être refusée pour Google (les autres OIDC gardent leur
+    // compatibilité si le claim optionnel est absent).
+    if (googleIssuer && claims.email_verified !== true) {
       throw new Error("L'adresse email fournie n'est pas vérifiée.");
+    }
+    if (!googleIssuer && claims.email_verified === false) {
+      throw new Error("L'adresse email fournie n'est pas vérifiée.");
+    }
+
+    const subject = claims.sub;
+    if (typeof subject !== 'string' || !subject) {
+      throw new Error("Le fournisseur d'identité n'a pas transmis d'identifiant d'utilisateur.");
     }
 
     return {
       identity: {
         email: String(email).toLowerCase().trim(),
-        subject: claims.sub,
+        subject,
         name: typeof claims.name === 'string' ? claims.name : undefined,
       },
       returnTo: attempt.returnTo,
@@ -247,6 +272,11 @@ export class SsoService {
     if (typeof value !== 'string') return '/';
     if (!value.startsWith('/') || value.startsWith('//')) return '/';
     return value.slice(0, 200);
+  }
+
+  private isGoogleIssuer(client: BaseClient): boolean {
+    const issuer = String(client.issuer.issuer).replace(/\/+$/, '').toLowerCase();
+    return issuer === 'https://accounts.google.com' || issuer === 'accounts.google.com';
   }
 
   private purgeExpired(): void {

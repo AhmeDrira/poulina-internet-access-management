@@ -394,6 +394,13 @@ export class UsersService {
     const updates: Record<string, any> = { ...dto };
     if (dto.email) {
       updates.email = dto.email.toLowerCase().trim();
+      // Une adresse `@poulina.local` issue de l'import est un substitut :
+      // dès qu'un administrateur la remplace par l'adresse professionnelle,
+      // le compte devient éligible au SSO et ne doit plus être signalé comme
+      // temporaire dans l'interface.
+      if (user.emailIsTemporary) {
+        updates.emailIsTemporary = false;
+      }
     }
     if (dto.department !== undefined) {
       updates.department = dto.department ? new Types.ObjectId(dto.department) : null;
